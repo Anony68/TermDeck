@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#0a0c10;font-family:'Segoe UI',system-ui,sans-serif}.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(255,255,255,.06);scroll-margin-top:16px}.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}.dv-tid{font:600 10px 'JetBrains Mono',monospace;padding:3px 7px;background:#2dd4a7;color:#06251c;border-radius:4px;text-decoration:none}.dv-tname{font:600 13px/1.2 'Segoe UI',sans-serif;color:#dce3ea}.dv-opts{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start}.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}.dv-oid{font:600 10.5px 'JetBrains Mono',monospace;padding:3px 7px;background:rgba(255,255,255,.1);color:#dce3ea;border-radius:5px;text-decoration:none}.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11.5px/1.3 'Segoe UI',sans-serif;color:rgba(220,227,234,.6)}.dv-card{max-width:100%;background:#0f1318;border:1px solid rgba(255,255,255,.09);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.5);overflow:hidden}.dv-opt:target .dv-oid{background:#2dd4a7;color:#06251c}.dv-next{margin:24px 0 0;font:12px/1.5 'Segoe UI',sans-serif;color:rgba(220,227,234,.45)}</style>
+</helmet>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">TermDeck — Dashboard quản lý cmd/git bash/powershell · 3 phương án màn chính + dialog + settings</span></div>
+<div class="dv-opts">
+
+<!-- ============ 1a: Sidebar layout, grid 2x2 ============ -->
+<div class="dv-opt" id="1a">
+  <div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Sidebar danh sách đã lưu · grid 2×2 · đầy đủ nhất</div>
+  <div class="dv-card" style="width:1180px;height:740px;display:flex;flex-direction:column">
+    <!-- titlebar -->
+    <div style="display:flex;align-items:center;height:38px;background:#0b0e13;border-bottom:1px solid #1c232d;padding:0 0 0 12px;flex:none">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="width:18px;height:18px;border-radius:4px;background:#2dd4a7;display:grid;place-items:center;font:700 10px 'JetBrains Mono',monospace;color:#06251c">&gt;_</div>
+        <span style="font:600 12.5px 'Segoe UI',sans-serif;color:#dce3ea">TermDeck</span>
+      </div>
+      <!-- tabs -->
+      <div style="display:flex;align-items:flex-end;gap:2px;margin-left:24px;align-self:flex-end">
+        <div style="display:flex;align-items:center;gap:7px;padding:8px 14px;background:#161b22;border:1px solid #232a34;border-bottom:none;border-radius:8px 8px 0 0;font:600 12px 'Segoe UI',sans-serif;color:#dce3ea"><span style="width:6px;height:6px;border-radius:50%;background:#2dd4a7"></span>Dự án API<span style="color:#5b6472;font-weight:400;margin-left:2px">✕</span></div>
+        <div style="display:flex;align-items:center;gap:7px;padding:8px 14px;font:400 12px 'Segoe UI',sans-serif;color:#8a94a3;border-radius:8px 8px 0 0" style-hover="background:#12161d">Data Pipeline</div>
+        <div style="display:flex;align-items:center;gap:7px;padding:8px 14px;font:400 12px 'Segoe UI',sans-serif;color:#8a94a3;border-radius:8px 8px 0 0" style-hover="background:#12161d">DevOps</div>
+        <div style="padding:6px 10px;font:400 14px 'Segoe UI',sans-serif;color:#8a94a3;cursor:pointer" style-hover="color:#dce3ea">＋</div>
+      </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;height:38px">
+        <div style="width:44px;display:grid;place-items:center;color:#8a94a3;font-size:13px" style-hover="background:#1c232d">─</div>
+        <div style="width:44px;display:grid;place-items:center;color:#8a94a3;font-size:11px" style-hover="background:#1c232d">▢</div>
+        <div style="width:44px;display:grid;place-items:center;color:#8a94a3;font-size:12px" style-hover="background:#c42b1c;color:#fff">✕</div>
+      </div>
+    </div>
+    <!-- toolbar -->
+    <div style="display:flex;align-items:center;gap:14px;height:44px;background:#0f1318;border-bottom:1px solid #1c232d;padding:0 14px;flex:none">
+      <span style="font:600 10.5px 'Segoe UI',sans-serif;color:#5b6472;letter-spacing:.08em">BỐ CỤC</span>
+      <div style="display:flex;gap:4px;background:#0b0e13;border:1px solid #232a34;border-radius:7px;padding:4px">
+        <div style="padding:4px 6px;border-radius:5px" style-hover="background:#1c232d"><svg width="22" height="16" viewBox="0 0 22 16"><rect width="22" height="16" rx="2" fill="#5b6472"/></svg></div>
+        <div style="padding:4px 6px;border-radius:5px" style-hover="background:#1c232d"><svg width="22" height="16" viewBox="0 0 22 16"><rect width="10.5" height="16" rx="2" fill="#5b6472"/><rect x="11.5" width="10.5" height="16" rx="2" fill="#5b6472"/></svg></div>
+        <div style="padding:4px 6px;border-radius:5px" style-hover="background:#1c232d"><svg width="22" height="16" viewBox="0 0 22 16"><rect width="22" height="7.5" rx="2" fill="#5b6472"/><rect y="8.5" width="22" height="7.5" rx="2" fill="#5b6472"/></svg></div>
+        <div style="padding:4px 6px;border-radius:5px;background:rgba(45,212,167,.16)"><svg width="22" height="16" viewBox="0 0 22 16"><rect width="10.5" height="7.5" rx="2" fill="#2dd4a7"/><rect x="11.5" width="10.5" height="7.5" rx="2" fill="#2dd4a7"/><rect y="8.5" width="10.5" height="7.5" rx="2" fill="#2dd4a7"/><rect x="11.5" y="8.5" width="10.5" height="7.5" rx="2" fill="#2dd4a7"/></svg></div>
+        <div style="padding:4px 6px;border-radius:5px" style-hover="background:#1c232d"><svg width="22" height="16" viewBox="0 0 22 16"><rect width="13" height="16" rx="2" fill="#5b6472"/><rect x="14" width="8" height="7.5" rx="2" fill="#5b6472"/><rect x="14" y="8.5" width="8" height="7.5" rx="2" fill="#5b6472"/></svg></div>
+        <div style="padding:4px 6px;border-radius:5px" style-hover="background:#1c232d"><svg width="22" height="16" viewBox="0 0 22 16"><rect width="6.6" height="7.5" rx="1.5" fill="#5b6472"/><rect x="7.7" width="6.6" height="7.5" rx="1.5" fill="#5b6472"/><rect x="15.4" width="6.6" height="7.5" rx="1.5" fill="#5b6472"/><rect y="8.5" width="6.6" height="7.5" rx="1.5" fill="#5b6472"/><rect x="7.7" y="8.5" width="6.6" height="7.5" rx="1.5" fill="#5b6472"/><rect x="15.4" y="8.5" width="6.6" height="7.5" rx="1.5" fill="#5b6472"/></svg></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;font:400 11.5px 'Segoe UI',sans-serif;color:#5b6472"><span style="width:7px;height:7px;border-radius:50%;background:#2dd4a7"></span>Phiên được lưu tự động</div>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:7px;padding:6px 14px;background:#2dd4a7;color:#06251c;border-radius:7px;font:600 12px 'Segoe UI',sans-serif;cursor:pointer" style-hover="background:#3fe6b8">＋ Cmd mới</div>
+      <div style="width:30px;height:30px;display:grid;place-items:center;border-radius:7px;color:#8a94a3;font-size:14px" style-hover="background:#1c232d">⚙</div>
+    </div>
+    <!-- body: sidebar + grid -->
+    <div style="display:flex;flex:1;min-height:0">
+      <!-- sidebar -->
+      <div style="width:230px;flex:none;background:#0b0e13;border-right:1px solid #1c232d;display:flex;flex-direction:column">
+        <div style="padding:14px 14px 8px;font:600 10.5px 'Segoe UI',sans-serif;color:#5b6472;letter-spacing:.08em">CMD ĐÃ LƯU</div>
+        <div style="margin:0 12px 10px;display:flex;align-items:center;gap:7px;padding:6px 10px;background:#12161d;border:1px solid #232a34;border-radius:7px;font:400 11.5px 'Segoe UI',sans-serif;color:#5b6472">⌕ Tìm kiếm…</div>
+        <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:2px;padding:0 8px">
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 8px;border-radius:7px;background:#161b22;border:1px solid #232a34">
+            <div style="width:22px;height:22px;flex:none;border-radius:6px;display:grid;place-items:center;font:700 9px 'JetBrains Mono',monospace;background:rgba(74,163,255,.14);color:#4aa3ff">PS</div>
+            <div style="min-width:0"><div style="font:600 12px 'Segoe UI',sans-serif;color:#dce3ea">API Server</div><div style="font:400 10px 'JetBrains Mono',monospace;color:#5b6472;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">D:\work\api</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 8px;border-radius:7px" style-hover="background:#12161d">
+            <div style="width:22px;height:22px;flex:none;border-radius:6px;display:grid;place-items:center;font:700 9px 'JetBrains Mono',monospace;background:rgba(240,136,62,.14);color:#f0883e">GB</div>
+            <div style="min-width:0"><div style="font:600 12px 'Segoe UI',sans-serif;color:#dce3ea">Frontend Watch</div><div style="font:400 10px 'JetBrains Mono',monospace;color:#5b6472;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">/d/work/web</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 8px;border-radius:7px" style-hover="background:#12161d">
+            <div style="width:22px;height:22px;flex:none;border-radius:6px;display:grid;place-items:center;font:700 9px 'JetBrains Mono',monospace;background:rgba(157,167,179,.14);color:#9da7b3">&gt;_</div>
+            <div style="min-width:0"><div style="font:600 12px 'Segoe UI',sans-serif;color:#dce3ea">Build Gradle</div><div style="font:400 10px 'JetBrains Mono',monospace;color:#5b6472;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">D:\work\build</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 8px;border-radius:7px" style-hover="background:#12161d">
+            <div style="width:22px;height:22px;flex:none;border-radius:6px;display:grid;place-items:center;font:700 9px 'JetBrains Mono',monospace;background:rgba(180,142,173,.16);color:#b48ead">W</div>
+            <div style="min-width:0"><div style="font:600 12px 'Segoe UI',sans-serif;color:#dce3ea">Redis (WSL)</div><div style="font:400 10px 'JetBrains Mono',monospace;color:#5b6472;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">~/redis</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 8px;border-radius:7px" style-hover="background:#12161d">
+            <div style="width:22px;height:22px;flex:none;border-radius:6px;display:grid;place-items:center;font:700 9px 'JetBrains Mono',monospace;background:rgba(74,163,255,.14);color:#4aa3ff">PS</div>
+            <div style="min-width:0"><div style="font:600 12px 'Segoe UI',sans-serif;color:#dce3ea">Deploy Script</div><div style="font:400 10px 'JetBrains Mono',monospace;color:#5b6472;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">D:\ops\deploy</div></div>
+          </div>
+        </div>
+        <div style="font:400 10.5px 'Segoe UI',sans-serif;color:#3d4550;padding:10px 14px;border-top:1px solid #1c232d">Kéo thả vào grid để mở</div>
+      </div>
+      <!-- grid 2x2 -->
+      <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:10px;padding:12px;min-width:0">
+        <!-- pane 1 PS running -->
+        <div style="display:flex;flex-direction:column;background:#0b0e13;border:1px solid #2dd4a7;border-radius:9px;overflow:hidden;min-height:0;box-shadow:0 0 0 1px rgba(45,212,167,.25)">
+          <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#161b22;border-bottom:1px solid #232a34;flex:none">
+            <div style="width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font:700 8.5px 'JetBrains Mono',monospace;background:rgba(74,163,255,.14);color:#4aa3ff">PS</div>
+            <span style="font:600 12px 'Segoe UI',sans-serif;color:#dce3ea">API Server</span>
+            <span style="font:400 10.5px 'JetBrains Mono',monospace;color:#5b6472;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">D:\work\api</span>
+            <span style="width:7px;height:7px;border-radius:50%;background:#2dd4a7;box-shadow:0 0 6px rgba(45,212,167,.8)"></span>
+            <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:12px" style-hover="background:#232a34;color:#dce3ea">⟳</span>
+            <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:11px" style-hover="background:#3d1f1f;color:#e5534b">✕</span>
+          </div>
+          <div style="flex:1;padding:10px 13px;font:400 11.5px/1.75 'JetBrains Mono',monospace;color:#9aa7b5;overflow:hidden">
+            <div><span style="color:#4aa3ff">PS D:\work\api&gt;</span> npm run dev</div>
+            <div style="color:#5b6472">&gt; api@1.4.0 dev · nodemon src/index.ts</div>
+            <div><span style="color:#2dd4a7">✔</span> Server listening on <span style="color:#dce3ea">http://localhost:4000</span></div>
+            <div><span style="color:#2dd4a7">✔</span> Connected to postgres (12ms)</div>
+            <div style="color:#5b6472">[08:42:17] GET /api/v1/users 200 · 34ms</div>
+            <div><span style="color:#4aa3ff">PS D:\work\api&gt;</span> <span style="display:inline-block;width:7px;height:13px;background:#dce3ea;vertical-align:-2px"></span></div>
+          </div>
+        </div>
+        <!-- pane 2 Git Bash -->
+        <div style="display:flex;flex-direction:column;background:#0b0e13;border:1px solid #232a34;border-radius:9px;overflow:hidden;min-height:0">
+          <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#161b22;border-bottom:1px solid #232a34;flex:none">
+            <div style="width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font:700 8.5px 'JetBrains Mono',monospace;background:rgba(240,136,62,.14);color:#f0883e">GB</div>
+            <span style="font:600 12px 'Segoe UI',sans-serif;color:#dce3ea">Frontend Watch</span>
+            <span style="font:400 10.5px 'JetBrains Mono',monospace;color:#5b6472;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">/d/work/web</span>
+            <span style="width:7px;height:7px;border-radius:50%;background:#2dd4a7;box-shadow:0 0 6px rgba(45,212,167,.8)"></span>
+            <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:12px" style-hover="background:#232a34;color:#dce3ea">⟳</span>
+            <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:11px" style-hover="background:#3d1f1f;color:#e5534b">✕</span>
+          </div>
+          <div style="flex:1;padding:10px 13px;font:400 11.5px/1.75 'JetBrains Mono',monospace;color:#9aa7b5;overflow:hidden">
+            <div style="color:#f0883e">user@DESKTOP MINGW64 <span style="color:#b48ead">/d/work/web</span> <span style="color:#2dd4a7">(main)</span></div>
+            <div><span style="color:#dce3ea">$</span> npm run watch</div>
+            <div style="color:#5b6472">vite v5.3 building for development…</div>
+            <div><span style="color:#2dd4a7">✔</span> 214 modules · built in 890ms</div>
+            <div style="color:#5b6472">watching for file changes…</div>
+          </div>
+        </div>
+        <!-- pane 3 CMD stopped -->
+        <div style="display:flex;flex-direction:column;background:#0b0e13;border:1px solid #232a34;border-radius:9px;overflow:hidden;min-height:0">
+          <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#161b22;border-bottom:1px solid #232a34;flex:none">
+            <div style="width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font:700 8.5px 'JetBrains Mono',monospace;background:rgba(157,167,179,.14);color:#9da7b3">&gt;_</div>
+            <span style="font:600 12px 'Segoe UI',sans-serif;color:#8a94a3">Build Gradle</span>
+            <span style="font:400 10.5px 'JetBrains Mono',monospace;color:#5b6472;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">D:\work\build</span>
+            <span style="width:7px;height:7px;border-radius:50%;background:#5b6472"></span>
+            <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:12px" style-hover="background:#232a34;color:#dce3ea">⟳</span>
+            <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:11px" style-hover="background:#3d1f1f;color:#e5534b">✕</span>
+          </div>
+          <div style="flex:1;display:grid;place-items:center;opacity:.9">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+              <div style="font:400 11.5px 'JetBrains Mono',monospace;color:#5b6472">Tiến trình đã kết thúc (exit 0)</div>
+              <div style="display:flex;align-items:center;gap:7px;padding:6px 14px;border:1px solid #2dd4a7;color:#2dd4a7;border-radius:7px;font:600 12px 'Segoe UI',sans-serif;cursor:pointer" style-hover="background:rgba(45,212,167,.12)">⟳ Mở lại đúng path</div>
+            </div>
+          </div>
+        </div>
+        <!-- pane 4 WSL -->
+        <div style="display:flex;flex-direction:column;background:#0b0e13;border:1px solid #232a34;border-radius:9px;overflow:hidden;min-height:0">
+          <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#161b22;border-bottom:1px solid #232a34;flex:none">
+            <div style="width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font:700 8.5px 'JetBrains Mono',monospace;background:rgba(180,142,173,.16);color:#b48ead">W</div>
+            <span style="font:600 12px 'Segoe UI',sans-serif;color:#dce3ea">Redis (WSL)</span>
+            <span style="font:400 10.5px 'JetBrains Mono',monospace;color:#5b6472;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">~/redis</span>
+            <span style="width:7px;height:7px;border-radius:50%;background:#2dd4a7;box-shadow:0 0 6px rgba(45,212,167,.8)"></span>
+            <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:12px" style-hover="background:#232a34;color:#dce3ea">⟳</span>
+            <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:11px" style-hover="background:#3d1f1f;color:#e5534b">✕</span>
+          </div>
+          <div style="flex:1;padding:10px 13px;font:400 11.5px/1.75 'JetBrains Mono',monospace;color:#9aa7b5;overflow:hidden">
+            <div><span style="color:#b48ead">user@wsl</span>:<span style="color:#4aa3ff">~/redis</span>$ redis-server</div>
+            <div style="color:#5b6472">7.2.4 · standalone mode · port 6379</div>
+            <div><span style="color:#2dd4a7">✔</span> Ready to accept connections</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- statusbar -->
+    <div style="display:flex;align-items:center;gap:16px;height:26px;background:#0b0e13;border-top:1px solid #1c232d;padding:0 14px;font:400 10.5px 'JetBrains Mono',monospace;color:#5b6472;flex:none">
+      <span>tab: Dự án API</span><span>4 cmd · 3 đang chạy</span><span style="flex:1"></span><span>bố cục 2×2</span><span style="color:#2dd4a7">● phiên đã lưu 08:42</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 1b: No sidebar, 1 lớn + 2 nhỏ ============ -->
+<div class="dv-opt" id="1b">
+  <div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Gọn không sidebar · tab trên titlebar · grid 1 lớn + 2 nhỏ</div>
+  <div class="dv-card" style="width:1180px;height:740px;display:flex;flex-direction:column">
+    <!-- titlebar with tabs -->
+    <div style="display:flex;align-items:center;height:40px;background:#0b0e13;padding:0 0 0 12px;flex:none;gap:10px">
+      <div style="width:18px;height:18px;border-radius:4px;background:#2dd4a7;display:grid;place-items:center;font:700 10px 'JetBrains Mono',monospace;color:#06251c">&gt;_</div>
+      <div style="display:flex;gap:4px;align-self:center">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 14px;background:#1b222b;border-radius:7px;font:600 12px 'Segoe UI',sans-serif;color:#dce3ea"><span style="width:6px;height:6px;border-radius:50%;background:#2dd4a7"></span>Dự án API<span style="color:#5b6472;font-weight:400">✕</span></div>
+        <div style="display:flex;align-items:center;padding:6px 14px;border-radius:7px;font:400 12px 'Segoe UI',sans-serif;color:#8a94a3" style-hover="background:#12161d">Data Pipeline</div>
+        <div style="display:flex;align-items:center;padding:6px 14px;border-radius:7px;font:400 12px 'Segoe UI',sans-serif;color:#8a94a3" style-hover="background:#12161d">DevOps</div>
+        <div style="display:flex;align-items:center;padding:6px 10px;border-radius:7px;font:400 13px 'Segoe UI',sans-serif;color:#8a94a3" style-hover="background:#12161d">＋</div>
+      </div>
+      <div style="flex:1"></div>
+      <!-- grid picker inline -->
+      <div style="display:flex;gap:3px;background:#12161d;border:1px solid #232a34;border-radius:7px;padding:3px;margin-right:6px">
+        <div style="padding:3px 5px;border-radius:5px"><svg width="20" height="14" viewBox="0 0 22 16"><rect width="22" height="16" rx="2" fill="#5b6472"/></svg></div>
+        <div style="padding:3px 5px;border-radius:5px"><svg width="20" height="14" viewBox="0 0 22 16"><rect width="10.5" height="16" rx="2" fill="#5b6472"/><rect x="11.5" width="10.5" height="16" rx="2" fill="#5b6472"/></svg></div>
+        <div style="padding:3px 5px;border-radius:5px"><svg width="20" height="14" viewBox="0 0 22 16"><rect width="22" height="7.5" rx="2" fill="#5b6472"/><rect y="8.5" width="22" height="7.5" rx="2" fill="#5b6472"/></svg></div>
+        <div style="padding:3px 5px;border-radius:5px"><svg width="20" height="14" viewBox="0 0 22 16"><rect width="10.5" height="7.5" rx="2" fill="#5b6472"/><rect x="11.5" width="10.5" height="7.5" rx="2" fill="#5b6472"/><rect y="8.5" width="10.5" height="7.5" rx="2" fill="#5b6472"/><rect x="11.5" y="8.5" width="10.5" height="7.5" rx="2" fill="#5b6472"/></svg></div>
+        <div style="padding:3px 5px;border-radius:5px;background:rgba(45,212,167,.16)"><svg width="20" height="14" viewBox="0 0 22 16"><rect width="13" height="16" rx="2" fill="#2dd4a7"/><rect x="14" width="8" height="7.5" rx="2" fill="#2dd4a7"/><rect x="14" y="8.5" width="8" height="7.5" rx="2" fill="#2dd4a7"/></svg></div>
+        <div style="padding:3px 5px;border-radius:5px"><svg width="20" height="14" viewBox="0 0 22 16"><rect width="6.6" height="7.5" rx="1.5" fill="#5b6472"/><rect x="7.7" width="6.6" height="7.5" rx="1.5" fill="#5b6472"/><rect x="15.4" width="6.6" height="7.5" rx="1.5" fill="#5b6472"/><rect y="8.5" width="6.6" height="7.5" rx="1.5" fill="#5b6472"/><rect x="7.7" y="8.5" width="6.6" height="7.5" rx="1.5" fill="#5b6472"/><rect x="15.4" y="8.5" width="6.6" height="7.5" rx="1.5" fill="#5b6472"/></svg></div>
+      </div>
+      <div style="width:30px;height:30px;display:grid;place-items:center;border-radius:7px;color:#2dd4a7;font-size:15px;border:1px solid #2dd4a7;margin-right:8px" style-hover="background:rgba(45,212,167,.12)">＋</div>
+      <div style="display:flex;height:40px">
+        <div style="width:44px;display:grid;place-items:center;color:#8a94a3;font-size:13px" style-hover="background:#1c232d">─</div>
+        <div style="width:44px;display:grid;place-items:center;color:#8a94a3;font-size:11px" style-hover="background:#1c232d">▢</div>
+        <div style="width:44px;display:grid;place-items:center;color:#8a94a3;font-size:12px" style-hover="background:#c42b1c;color:#fff">✕</div>
+      </div>
+    </div>
+    <!-- grid: 1 big + 2 small -->
+    <div style="flex:1;display:grid;grid-template-columns:1.6fr 1fr;grid-template-rows:1fr 1fr;gap:10px;padding:12px;min-height:0">
+      <div style="grid-row:1/3;display:flex;flex-direction:column;background:#0b0e13;border:1px solid #2dd4a7;border-radius:9px;overflow:hidden;min-height:0;box-shadow:0 0 0 1px rgba(45,212,167,.25)">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#161b22;border-bottom:1px solid #232a34;flex:none">
+          <div style="width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font:700 8.5px 'JetBrains Mono',monospace;background:rgba(74,163,255,.14);color:#4aa3ff">PS</div>
+          <span style="font:600 12.5px 'Segoe UI',sans-serif;color:#dce3ea">API Server</span>
+          <span style="font:400 10.5px 'JetBrains Mono',monospace;color:#5b6472;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">D:\work\api</span>
+          <span style="width:7px;height:7px;border-radius:50%;background:#2dd4a7;box-shadow:0 0 6px rgba(45,212,167,.8)"></span>
+          <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:12px" style-hover="background:#232a34;color:#dce3ea">⟳</span>
+          <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:11px" style-hover="background:#3d1f1f;color:#e5534b">✕</span>
+        </div>
+        <div style="flex:1;padding:12px 15px;font:400 12px/1.8 'JetBrains Mono',monospace;color:#9aa7b5;overflow:hidden">
+          <div><span style="color:#4aa3ff">PS D:\work\api&gt;</span> npm run dev</div>
+          <div style="color:#5b6472">&gt; api@1.4.0 dev · nodemon src/index.ts</div>
+          <div><span style="color:#2dd4a7">✔</span> Server listening on <span style="color:#dce3ea">http://localhost:4000</span></div>
+          <div><span style="color:#2dd4a7">✔</span> Connected to postgres (12ms)</div>
+          <div style="color:#5b6472">[08:42:17] GET /api/v1/users 200 · 34ms</div>
+          <div style="color:#5b6472">[08:42:31] POST /api/v1/jobs 201 · 58ms</div>
+          <div style="color:#e5b34a">[08:43:02] WARN slow query 412ms · reports.monthly</div>
+          <div style="color:#5b6472">[08:43:15] GET /api/v1/health 200 · 3ms</div>
+          <div><span style="color:#4aa3ff">PS D:\work\api&gt;</span> <span style="display:inline-block;width:7px;height:13px;background:#dce3ea;vertical-align:-2px"></span></div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;background:#0b0e13;border:1px solid #232a34;border-radius:9px;overflow:hidden;min-height:0">
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#161b22;border-bottom:1px solid #232a34;flex:none">
+          <div style="width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font:700 8.5px 'JetBrains Mono',monospace;background:rgba(240,136,62,.14);color:#f0883e">GB</div>
+          <span style="font:600 12px 'Segoe UI',sans-serif;color:#dce3ea">Frontend Watch</span>
+          <span style="font:400 10.5px 'JetBrains Mono',monospace;color:#5b6472;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">/d/work/web</span>
+          <span style="width:7px;height:7px;border-radius:50%;background:#2dd4a7"></span>
+          <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:12px" style-hover="background:#232a34;color:#dce3ea">⟳</span>
+          <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:11px" style-hover="background:#3d1f1f;color:#e5534b">✕</span>
+        </div>
+        <div style="flex:1;padding:10px 13px;font:400 11.5px/1.75 'JetBrains Mono',monospace;color:#9aa7b5;overflow:hidden">
+          <div style="color:#f0883e">user@DESKTOP MINGW64 <span style="color:#b48ead">/d/work/web</span> <span style="color:#2dd4a7">(main)</span></div>
+          <div><span style="color:#dce3ea">$</span> npm run watch</div>
+          <div><span style="color:#2dd4a7">✔</span> built in 890ms · watching…</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;background:#0b0e13;border:1px solid #232a34;border-radius:9px;overflow:hidden;min-height:0">
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#161b22;border-bottom:1px solid #232a34;flex:none">
+          <div style="width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font:700 8.5px 'JetBrains Mono',monospace;background:rgba(180,142,173,.16);color:#b48ead">W</div>
+          <span style="font:600 12px 'Segoe UI',sans-serif;color:#dce3ea">Redis (WSL)</span>
+          <span style="font:400 10.5px 'JetBrains Mono',monospace;color:#5b6472;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">~/redis</span>
+          <span style="width:7px;height:7px;border-radius:50%;background:#2dd4a7"></span>
+          <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:12px" style-hover="background:#232a34;color:#dce3ea">⟳</span>
+          <span style="width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8a94a3;font-size:11px" style-hover="background:#3d1f1f;color:#e5534b">✕</span>
+        </div>
+        <div style="flex:1;padding:10px 13px;font:400 11.5px/1.75 'JetBrains Mono',monospace;color:#9aa7b5;overflow:hidden">
+          <div><span style="color:#b48ead">user@wsl</span>:<span style="color:#4aa3ff">~/redis</span>$ redis-server</div>
+          <div><span style="color:#2dd4a7">✔</span> Ready · port 6379</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;height:26px;background:#0b0e13;border-top:1px solid #1c232d;padding:0 14px;font:400 10.5px 'JetBrains Mono',monospace;color:#5b6472;flex:none">
+      <span>3 cmd · 3 đang chạy</span><span style="flex:1"></span><span>bố cục 1+2</span><span style="color:#2dd4a7">● phiên đã lưu</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 1c: Icon rail, 3x2 ============ -->
+<div class="dv-opt" id="1c">
+  <div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Rail icon dọc · mật độ cao · grid 3×2 (6 cmd)</div>
+  <div class="dv-card" style="width:1180px;height:740px;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;height:36px;background:#0b0e13;border-bottom:1px solid #1c232d;padding:0 0 0 12px;flex:none;gap:10px">
+      <span style="font:600 12px 'Segoe UI',sans-serif;color:#dce3ea">TermDeck</span>
+      <span style="font:400 11px 'Segoe UI',sans-serif;color:#5b6472">— DevOps · 6 cmd</span>
+      <div style="flex:1"></div>
+      <div style="display:flex;height:36px">
+        <div style="width:44px;display:grid;place-items:center;color:#8a94a3;font-size:13px" style-hover="background:#1c232d">─</div>
+        <div style="width:44px;display:grid;place-items:center;color:#8a94a3;font-size:11px" style-hover="background:#1c232d">▢</div>
+        <div style="width:44px;display:grid;place-items:center;color:#8a94a3;font-size:12px" style-hover="background:#c42b1c;color:#fff">✕</div>
+      </div>
+    </div>
+    <div style="display:flex;flex:1;min-height:0">
+      <!-- rail -->
+      <div style="width:56px;flex:none;background:#0b0e13;border-right:1px solid #1c232d;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:8px">
+        <div style="width:38px;height:38px;border-radius:9px;display:grid;place-items:center;font:700 12px 'Segoe UI',sans-serif;background:#12161d;color:#8a94a3;border:1px solid #232a34" style-hover="color:#dce3ea">AP</div>
+        <div style="width:38px;height:38px;border-radius:9px;display:grid;place-items:center;font:700 12px 'Segoe UI',sans-serif;background:#12161d;color:#8a94a3;border:1px solid #232a34" style-hover="color:#dce3ea">DA</div>
+        <div style="width:38px;height:38px;border-radius:9px;display:grid;place-items:center;font:700 12px 'Segoe UI',sans-serif;background:rgba(45,212,167,.16);color:#2dd4a7;border:1px solid #2dd4a7;position:relative">DV<span style="position:absolute;right:-2px;top:-2px;width:8px;height:8px;border-radius:50%;background:#2dd4a7;border:2px solid #0b0e13"></span></div>
+        <div style="width:38px;height:38px;border-radius:9px;display:grid;place-items:center;font:400 16px 'Segoe UI',sans-serif;color:#5b6472;border:1px dashed #232a34" style-hover="color:#dce3ea">＋</div>
+        <div style="flex:1"></div>
+        <div style="width:38px;height:38px;border-radius:9px;display:grid;place-items:center;font-size:14px;color:#8a94a3" style-hover="background:#12161d">⚙</div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <!-- toolbar -->
+        <div style="display:flex;align-items:center;gap:12px;height:40px;border-bottom:1px solid #1c232d;padding:0 12px;flex:none">
+          <span style="font:600 13px 'Segoe UI',sans-serif;color:#dce3ea">DevOps</span>
+          <div style="display:flex;gap:3px;background:#0b0e13;border:1px solid #232a34;border-radius:7px;padding:3px">
+            <div style="padding:3px 5px;border-radius:5px"><svg width="20" height="14" viewBox="0 0 22 16"><rect width="22" height="16" rx="2" fill="#5b6472"/></svg></div>
+            <div style="padding:3px 5px;border-radius:5px"><svg width="20" height="14" viewBox="0 0 22 16"><rect width="10.5" height="7.5" rx="2" fill="#5b6472"/><rect x="11.5" width="10.5" height="7.5" rx="2" fill="#5b6472"/><rect y="8.5" width="10.5" height="7.5" rx="2" fill="#5b6472"/><rect x="11.5" y="8.5" width="10.5" height="7.5" rx="2" fill="#5b6472"/></svg></div>
+            <div style="padding:3px 5px;border-radius:5px"><svg width="20" height="14" viewBox="0 0 22 16"><rect width="13" height="16" rx="2" fill="#5b6472"/><rect x="14" width="8" height="7.5" rx="2" fill="#5b6472"/><rect x="14" y="8.5" width="8" height="7.5" rx="2" fill="#5b6472"/></svg></div>
+            <div style="padding:3px 5px;border-radius:5px;background:rgba(45,212,167,.16)"><svg width="20" height="14" viewBox="0 0 22 16"><rect width="6.6" height="7.5" rx="1.5" fill="#2dd4a7"/><rect x="7.7" width="6.6" height="7.5" rx="1.5" fill="#2dd4a7"/><rect x="15.4" width="6.6" height="7.5" rx="1.5" fill="#2dd4a7"/><rect y="8.5" width="6.6" height="7.5" rx="1.5" fill="#2dd4a7"/><rect x="7.7" y="8.5" width="6.6" height="7.5" rx="1.5" fill="#2dd4a7"/><rect x="15.4" y="8.5" width="6.6" height="7.5" rx="1.5" fill="#2dd4a7"/></svg></div>
+          </div>
+          <div style="flex:1"></div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 12px;background:#2dd4a7;color:#06251c;border-radius:7px;font:600 11.5px 'Segoe UI',sans-serif">＋ Cmd mới</div>
+        </div>
+        <!-- 3x2 grid -->
+        <div style="flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:1fr 1fr;gap:8px;padding:10px;min-height:0">
+          <div style="display:flex;flex-direction:column;background:#0b0e13;border:1px solid #232a34;border-radius:8px;overflow:hidden;min-height:0">
+            <div style="display:flex;align-items:center;gap:7px;padding:6px 9px;background:#161b22;border-bottom:1px solid #232a34;flex:none">
+              <div style="width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font:700 8px 'JetBrains Mono',monospace;background:rgba(74,163,255,.14);color:#4aa3ff">PS</div>
+              <span style="font:600 11px 'Segoe UI',sans-serif;color:#dce3ea;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Deploy</span>
+              <span style="width:6px;height:6px;border-radius:50%;background:#2dd4a7"></span><span style="color:#8a94a3;font-size:11px">⟳</span><span style="color:#8a94a3;font-size:10px">✕</span>
+            </div>
+            <div style="flex:1;padding:8px 10px;font:400 10.5px/1.7 'JetBrains Mono',monospace;color:#9aa7b5;overflow:hidden"><div style="color:#5b6472">D:\ops\deploy</div><div><span style="color:#2dd4a7">✔</span> release v2.1 pushed</div></div>
+          </div>
+          <div style="display:flex;flex-direction:column;background:#0b0e13;border:1px solid #232a34;border-radius:8px;overflow:hidden;min-height:0">
+            <div style="display:flex;align-items:center;gap:7px;padding:6px 9px;background:#161b22;border-bottom:1px solid #232a34;flex:none">
+              <div style="width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font:700 8px 'JetBrains Mono',monospace;background:rgba(240,136,62,.14);color:#f0883e">GB</div>
+              <span style="font:600 11px 'Segoe UI',sans-serif;color:#dce3ea;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Git Sync</span>
+              <span style="width:6px;height:6px;border-radius:50%;background:#2dd4a7"></span><span style="color:#8a94a3;font-size:11px">⟳</span><span style="color:#8a94a3;font-size:10px">✕</span>
+            </div>
+            <div style="flex:1;padding:8px 10px;font:400 10.5px/1.7 'JetBrains Mono',monospace;color:#9aa7b5;overflow:hidden"><div><span style="color:#dce3ea">$</span> git pull --rebase</div><div style="color:#5b6472">Already up to date.</div></div>
+          </div>
+          <div style="display:flex;flex-direction:column;background:#0b0e13;border:1px solid #232a34;border-radius:8px;overflow:hidden;min-height:0">
+            <div style="display:flex;align-items:center;gap:7px;padding:6px 9px;background:#161b22;border-bottom:1px solid #232a34;flex:none">
+              <div style="width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font:700 8px 'JetBrains Mono',monospace;background:rgba(180,142,173,.16);color:#b48ead">W</div>
+              <span style="font:600 11px 'Segoe UI',sans-serif;color:#dce3ea;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Docker (WSL)</span>
+              <span style="width:6px;height:6px;border-radius:50%;background:#2dd4a7"></span><span style="color:#8a94a3;font-size:11px">⟳</span><span style="color:#8a94a3;font-size:10px">✕</span>
+            </div>
+            <div style="flex:1;padding:8px 10px;font:400 10.5px/1.7 'JetBrains Mono',monospace;color:#9aa7b5;overflow:hidden"><div><span style="color:#dce3ea">$</span> docker compose up</div><div><span style="color:#2dd4a7">✔</span> 3 containers running</div></div>
+          </div>
+          <div style="display:flex;flex-direction:column;background:#0b0e13;border:1px solid #232a34;border-radius:8px;overflow:hidden;min-height:0">
+            <div style="display:flex;align-items:center;gap:7px;padding:6px 9px;background:#161b22;border-bottom:1px solid #232a34;flex:none">
+              <div style="width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font:700 8px 'JetBrains Mono',monospace;background:rgba(157,167,179,.14);color:#9da7b3">&gt;_</div>
+              <span style="font:600 11px 'Segoe UI',sans-serif;color:#8a94a3;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Logs Tail</span>
+              <span style="width:6px;height:6px;border-radius:50%;background:#5b6472"></span><span style="color:#8a94a3;font-size:11px">⟳</span><span style="color:#8a94a3;font-size:10px">✕</span>
+            </div>
+            <div style="flex:1;display:grid;place-items:center"><div style="display:flex;align-items:center;gap:6px;padding:4px 11px;border:1px solid #2dd4a7;color:#2dd4a7;border-radius:6px;font:600 10.5px 'Segoe UI',sans-serif">⟳ Mở lại</div></div>
+          </div>
+          <div style="display:flex;flex-direction:column;background:#0b0e13;border:1px solid #232a34;border-radius:8px;overflow:hidden;min-height:0">
+            <div style="display:flex;align-items:center;gap:7px;padding:6px 9px;background:#161b22;border-bottom:1px solid #232a34;flex:none">
+              <div style="width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font:700 8px 'JetBrains Mono',monospace;background:rgba(74,163,255,.14);color:#4aa3ff">PS</div>
+              <span style="font:600 11px 'Segoe UI',sans-serif;color:#dce3ea;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">K8s Watch</span>
+              <span style="width:6px;height:6px;border-radius:50%;background:#2dd4a7"></span><span style="color:#8a94a3;font-size:11px">⟳</span><span style="color:#8a94a3;font-size:10px">✕</span>
+            </div>
+            <div style="flex:1;padding:8px 10px;font:400 10.5px/1.7 'JetBrains Mono',monospace;color:#9aa7b5;overflow:hidden"><div style="color:#5b6472">kubectl get pods -w</div><div>api-7f9c <span style="color:#2dd4a7">Running</span></div></div>
+          </div>
+          <div style="display:flex;flex-direction:column;background:#0b0e13;border:1px dashed #2a3441;border-radius:8px;min-height:0;align-items:center;justify-content:center;gap:6px">
+            <span style="font:400 20px 'Segoe UI',sans-serif;color:#3d4550">＋</span>
+            <span style="font:400 11px 'Segoe UI',sans-serif;color:#3d4550">Ô trống — thêm cmd hoặc kéo từ danh sách</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;height:26px;background:#0b0e13;border-top:1px solid #1c232d;padding:0 14px;font:400 10.5px 'JetBrains Mono',monospace;color:#5b6472;flex:none">
+      <span>tab: DevOps</span><span>5 cmd · 4 đang chạy</span><span style="flex:1"></span><span>bố cục 3×2</span><span style="color:#2dd4a7">● phiên đã lưu</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 1d: Dialog thêm cmd ============ -->
+<div class="dv-opt" id="1d">
+  <div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Dialog thêm cmd mới (chọn shell + path + tên + vị trí)</div>
+  <div class="dv-card" style="width:900px;height:640px;position:relative;background:#0f1318">
+    <!-- dimmed fake bg -->
+    <div style="position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:10px;padding:44px 12px 12px;opacity:.25;filter:blur(1px)">
+      <div style="background:#0b0e13;border:1px solid #232a34;border-radius:9px"></div>
+      <div style="background:#0b0e13;border:1px solid #232a34;border-radius:9px"></div>
+      <div style="background:#0b0e13;border:1px solid #232a34;border-radius:9px"></div>
+      <div style="background:#0b0e13;border:1px solid #232a34;border-radius:9px"></div>
+    </div>
+    <div style="position:absolute;inset:0;background:rgba(5,7,10,.55);display:grid;place-items:center">
+      <div style="width:480px;background:#12161d;border:1px solid #2a3441;border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.6);overflow:hidden">
+        <div style="display:flex;align-items:center;padding:16px 20px 0">
+          <span style="font:600 15px 'Segoe UI',sans-serif;color:#dce3ea;flex:1">Thêm cmd mới</span>
+          <span style="color:#5b6472;font-size:13px;cursor:pointer" style-hover="color:#dce3ea">✕</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px;padding:18px 20px">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <label style="font:600 11px 'Segoe UI',sans-serif;color:#8a94a3">TÊN HIỂN THỊ</label>
+            <div style="padding:8px 12px;background:#0b0e13;border:1px solid #2dd4a7;border-radius:7px;font:400 12.5px 'Segoe UI',sans-serif;color:#dce3ea">API Server<span style="display:inline-block;width:1.5px;height:14px;background:#2dd4a7;vertical-align:-2px;margin-left:1px"></span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <label style="font:600 11px 'Segoe UI',sans-serif;color:#8a94a3">LOẠI SHELL</label>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 4px;background:rgba(74,163,255,.1);border:1px solid #4aa3ff;border-radius:8px">
+                <div style="width:24px;height:24px;border-radius:6px;display:grid;place-items:center;font:700 9.5px 'JetBrains Mono',monospace;background:rgba(74,163,255,.18);color:#4aa3ff">PS</div>
+                <span style="font:600 10.5px 'Segoe UI',sans-serif;color:#dce3ea">PowerShell</span>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 4px;background:#0b0e13;border:1px solid #232a34;border-radius:8px" style-hover="border-color:#3d4550">
+                <div style="width:24px;height:24px;border-radius:6px;display:grid;place-items:center;font:700 9.5px 'JetBrains Mono',monospace;background:rgba(157,167,179,.14);color:#9da7b3">&gt;_</div>
+                <span style="font:400 10.5px 'Segoe UI',sans-serif;color:#8a94a3">CMD</span>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 4px;background:#0b0e13;border:1px solid #232a34;border-radius:8px" style-hover="border-color:#3d4550">
+                <div style="width:24px;height:24px;border-radius:6px;display:grid;place-items:center;font:700 9.5px 'JetBrains Mono',monospace;background:rgba(240,136,62,.14);color:#f0883e">GB</div>
+                <span style="font:400 10.5px 'Segoe UI',sans-serif;color:#8a94a3">Git Bash</span>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 4px;background:#0b0e13;border:1px solid #232a34;border-radius:8px" style-hover="border-color:#3d4550">
+                <div style="width:24px;height:24px;border-radius:6px;display:grid;place-items:center;font:700 9.5px 'JetBrains Mono',monospace;background:rgba(180,142,173,.16);color:#b48ead">W</div>
+                <span style="font:400 10.5px 'Segoe UI',sans-serif;color:#8a94a3">WSL</span>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <label style="font:600 11px 'Segoe UI',sans-serif;color:#8a94a3">ĐƯỜNG DẪN KHỞI ĐỘNG</label>
+            <div style="display:flex;gap:8px">
+              <div style="flex:1;padding:8px 12px;background:#0b0e13;border:1px solid #232a34;border-radius:7px;font:400 12px 'JetBrains Mono',monospace;color:#dce3ea">D:\work\api</div>
+              <div style="padding:8px 14px;background:#1b222b;border:1px solid #2a3441;border-radius:7px;font:600 12px 'Segoe UI',sans-serif;color:#dce3ea;cursor:pointer" style-hover="background:#232a34">Chọn…</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <label style="font:600 11px 'Segoe UI',sans-serif;color:#8a94a3">LỆNH CHẠY SẴN <span style="font-weight:400;color:#5b6472">(tùy chọn)</span></label>
+            <div style="padding:8px 12px;background:#0b0e13;border:1px solid #232a34;border-radius:7px;font:400 12px 'JetBrains Mono',monospace;color:#8a94a3">npm run dev</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px">
+            <div style="width:34px;height:19px;border-radius:10px;background:#2dd4a7;position:relative;flex:none"><span style="position:absolute;right:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#06251c"></span></div>
+            <span style="font:400 12px 'Segoe UI',sans-serif;color:#dce3ea">Tự mở lại cmd này khi khởi động ứng dụng</span>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;background:#0e1218;border-top:1px solid #1c232d">
+          <div style="padding:8px 18px;border-radius:7px;font:600 12.5px 'Segoe UI',sans-serif;color:#8a94a3;cursor:pointer" style-hover="background:#1b222b;color:#dce3ea">Hủy</div>
+          <div style="padding:8px 18px;background:#2dd4a7;color:#06251c;border-radius:7px;font:600 12.5px 'Segoe UI',sans-serif;cursor:pointer" style-hover="background:#3fe6b8">Thêm vào tab</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 1e: Settings ============ -->
+<div class="dv-opt" id="1e">
+  <div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>Settings — Phiên &amp; Khôi phục (session restore)</div>
+  <div class="dv-card" style="width:900px;height:640px;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;height:38px;background:#0b0e13;border-bottom:1px solid #1c232d;padding:0 0 0 14px;flex:none">
+      <span style="font:600 12.5px 'Segoe UI',sans-serif;color:#dce3ea">Cài đặt</span>
+      <div style="flex:1"></div>
+      <div style="width:44px;height:38px;display:grid;place-items:center;color:#8a94a3;font-size:12px" style-hover="background:#c42b1c;color:#fff">✕</div>
+    </div>
+    <div style="display:flex;flex:1;min-height:0">
+      <div style="width:200px;flex:none;background:#0b0e13;border-right:1px solid #1c232d;padding:12px 8px;display:flex;flex-direction:column;gap:2px">
+        <div style="padding:8px 12px;border-radius:7px;font:400 12.5px 'Segoe UI',sans-serif;color:#8a94a3" style-hover="background:#12161d">Chung</div>
+        <div style="padding:8px 12px;border-radius:7px;background:rgba(45,212,167,.12);font:600 12.5px 'Segoe UI',sans-serif;color:#2dd4a7">Phiên &amp; Khôi phục</div>
+        <div style="padding:8px 12px;border-radius:7px;font:400 12.5px 'Segoe UI',sans-serif;color:#8a94a3" style-hover="background:#12161d">Bố cục mặc định</div>
+        <div style="padding:8px 12px;border-radius:7px;font:400 12.5px 'Segoe UI',sans-serif;color:#8a94a3" style-hover="background:#12161d">Cấu hình shell</div>
+        <div style="padding:8px 12px;border-radius:7px;font:400 12.5px 'Segoe UI',sans-serif;color:#8a94a3" style-hover="background:#12161d">Phím tắt</div>
+      </div>
+      <div style="flex:1;padding:24px 28px;display:flex;flex-direction:column;gap:22px;min-width:0;overflow:hidden">
+        <div>
+          <div style="font:600 15px 'Segoe UI',sans-serif;color:#dce3ea">Phiên &amp; Khôi phục</div>
+          <div style="font:400 12px 'Segoe UI',sans-serif;color:#8a94a3;margin-top:3px">Khi tắt ứng dụng, toàn bộ tab, cmd, đường dẫn và bố cục grid được lưu lại và mở đúng như cũ.</div>
+        </div>
+        <div style="display:flex;flex-direction:column;background:#12161d;border:1px solid #232a34;border-radius:10px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid #1c232d">
+            <div style="flex:1"><div style="font:600 12.5px 'Segoe UI',sans-serif;color:#dce3ea">Mở lại các cmd khi khởi động</div><div style="font:400 11px 'Segoe UI',sans-serif;color:#5b6472">Khôi phục toàn bộ tab và cmd của phiên trước</div></div>
+            <div style="width:34px;height:19px;border-radius:10px;background:#2dd4a7;position:relative;flex:none"><span style="position:absolute;right:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#06251c"></span></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid #1c232d">
+            <div style="flex:1"><div style="font:600 12.5px 'Segoe UI',sans-serif;color:#dce3ea">Khôi phục đúng đường dẫn làm việc</div><div style="font:400 11px 'Segoe UI',sans-serif;color:#5b6472">Mỗi cmd mở lại đúng thư mục đã đặt</div></div>
+            <div style="width:34px;height:19px;border-radius:10px;background:#2dd4a7;position:relative;flex:none"><span style="position:absolute;right:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#06251c"></span></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid #1c232d">
+            <div style="flex:1"><div style="font:600 12.5px 'Segoe UI',sans-serif;color:#dce3ea">Khôi phục bố cục grid từng tab</div><div style="font:400 11px 'Segoe UI',sans-serif;color:#5b6472">Giữ nguyên mẫu grid và vị trí từng cmd trong lưới</div></div>
+            <div style="width:34px;height:19px;border-radius:10px;background:#2dd4a7;position:relative;flex:none"><span style="position:absolute;right:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#06251c"></span></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:13px 16px">
+            <div style="flex:1"><div style="font:600 12.5px 'Segoe UI',sans-serif;color:#dce3ea">Tự chạy lại lệnh đã cấu hình</div><div style="font:400 11px 'Segoe UI',sans-serif;color:#5b6472">Chạy lại "lệnh chạy sẵn" của mỗi cmd — cẩn thận với lệnh có tác dụng phụ</div></div>
+            <div style="width:34px;height:19px;border-radius:10px;background:#2a3441;position:relative;flex:none"><span style="position:absolute;left:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#8a94a3"></span></div>
+          </div>
+        </div>
+        <div>
+          <div style="font:600 11px 'Segoe UI',sans-serif;color:#5b6472;letter-spacing:.08em;margin-bottom:8px">PHIÊN GẦN ĐÂY</div>
+          <div style="display:flex;flex-direction:column;background:#12161d;border:1px solid #232a34;border-radius:10px;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1c232d">
+              <span style="font:400 11.5px 'JetBrains Mono',monospace;color:#8a94a3">Hôm nay 08:42</span>
+              <span style="font:400 11.5px 'Segoe UI',sans-serif;color:#5b6472;flex:1">3 tab · 12 cmd</span>
+              <span style="font:600 11px 'Segoe UI',sans-serif;color:#2dd4a7">Phiên hiện tại</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1c232d">
+              <span style="font:400 11.5px 'JetBrains Mono',monospace;color:#8a94a3">Hôm qua 18:05</span>
+              <span style="font:400 11.5px 'Segoe UI',sans-serif;color:#5b6472;flex:1">3 tab · 11 cmd</span>
+              <span style="font:600 11px 'Segoe UI',sans-serif;color:#8a94a3;padding:4px 11px;border:1px solid #2a3441;border-radius:6px;cursor:pointer" style-hover="border-color:#2dd4a7;color:#2dd4a7">Khôi phục</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px">
+              <span style="font:400 11.5px 'JetBrains Mono',monospace;color:#8a94a3">29/06 09:12</span>
+              <span style="font:400 11.5px 'Segoe UI',sans-serif;color:#5b6472;flex:1">2 tab · 6 cmd</span>
+              <span style="font:600 11px 'Segoe UI',sans-serif;color:#8a94a3;padding:4px 11px;border:1px solid #2a3441;border-radius:6px;cursor:pointer" style-hover="border-color:#2dd4a7;color:#2dd4a7">Khôi phục</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+<p class="dv-next">Thử tiếp: "chọn <a class="dv-oid" href="#1a">1a</a> làm hướng chính, làm prototype tương tác" · "gộp sidebar của <a class="dv-oid" href="#1a">1a</a> vào bố cục <a class="dv-oid" href="#1b">1b</a>" · "thêm màn kéo-thả sắp xếp grid"</p>
+</section>
+
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,85 @@
+// Shared domain types. The persisted shape (Store) mirrors what the Rust side
+// and plugin-store read/write.
+
+export type ShellKind = 'powershell' | 'cmd' | 'git-bash' | 'wsl';
+export type LayoutPreset =
+  | 'single'
+  | 'cols2'
+  | 'rows2'
+  | 'grid2x2'
+  | 'big1plus2'
+  | 'grid3x2';
+export type PaneStatus = 'running' | 'exited';
+export type FontSize = 'small' | 'medium' | 'large';
+
+/**
+ * A cmd is a persistent, globally-managed terminal (listed in the sidebar). Its
+ * process runs in the background regardless of which tabs display it.
+ */
+export interface Pane {
+  id: string;
+  name: string;
+  shell: ShellKind;
+  cwd: string;
+  presetCommand?: string;
+  autoStart: boolean;
+  /** Pinned cmds are shown in every tab. */
+  pinned?: boolean;
+}
+
+/** A tab's reference to a global pane, with its position in that tab's grid. */
+export interface TabItem {
+  paneId: string;
+  slot: number;
+}
+
+/** A tab has its own set of cmd references + layout. */
+export interface Tab {
+  id: string;
+  name: string;
+  layout: LayoutPreset;
+  pinned: boolean;
+  items: TabItem[];
+}
+
+export interface Settings {
+  restoreOnStartup: boolean;
+  restoreCwd: boolean;
+  restoreGrid: boolean;
+  autoRunCommand: boolean;
+  defaultLayout: LayoutPreset;
+  shellPaths: Partial<Record<ShellKind, string>>;
+  sidebarVisible: boolean;
+  fontSize: FontSize;
+}
+
+export interface Snapshot {
+  at: number;
+  tabCount: number;
+  cmdCount: number;
+  workspace: { tabs: Tab[]; panes: Pane[] };
+}
+
+/** Persisted document. Panes (cmds) are global; tabs reference them for display. */
+export interface PersistedState {
+  version: number;
+  tabs: Tab[];
+  panes: Pane[];
+  activeTabId: string;
+  settings: Settings;
+  snapshots: Snapshot[];
+}
+
+/** Shape returned by the Rust `detect_shells` command. */
+export interface ShellInfo {
+  kind: ShellKind;
+  label: string;
+  path: string;
+  available: boolean;
+}
+
+/** Runtime-only status for a live pane (never persisted). */
+export interface PaneRuntime {
+  status: PaneStatus;
+  exitCode?: number;
+}
