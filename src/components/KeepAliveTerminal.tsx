@@ -8,6 +8,7 @@ import { useSlots } from '../state/slots';
 import { getTerminalHolder } from '../terminalHolder';
 import { IS_TAURI } from '../ipc/env';
 import { FONT_PX } from '../fontSizes';
+import { ContextMenu } from './ContextMenu';
 
 const THEME = {
   background: '#0b0e13',
@@ -57,6 +58,18 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
   const fitRef = useRef<FitAddon | null>(null);
   const paneRef = useRef(pane);
   paneRef.current = pane;
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
+  // Right-click inside the terminal opens a copy/paste menu.
+  useEffect(() => {
+    const onCtx = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setMenu({ x: e.clientX, y: e.clientY });
+    };
+    host.addEventListener('contextmenu', onCtx);
+    return () => host.removeEventListener('contextmenu', onCtx);
+  }, [host]);
 
   const refit = () => {
     const term = termRef.current;
@@ -171,5 +184,33 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return null;
+  if (!menu) return null;
+  return (
+    <ContextMenu
+      x={menu.x}
+      y={menu.y}
+      onClose={() => setMenu(null)}
+      items={[
+        {
+          label: 'Sao chép',
+          disabled: !termRef.current?.hasSelection(),
+          onClick: () => {
+            const t = termRef.current;
+            if (t?.hasSelection()) void navigator.clipboard?.writeText(t.getSelection()).catch(() => {});
+          },
+        },
+        {
+          label: 'Dán',
+          onClick: () =>
+            void navigator.clipboard
+              ?.readText()
+              .then((txt) => writePty(paneId, txt))
+              .catch(() => {}),
+        },
+        { label: 'Chọn tất cả', onClick: () => termRef.current?.selectAll() },
+        { label: '', separator: true },
+        { label: 'Xóa màn hình', onClick: () => termRef.current?.clear() },
+      ]}
+    />
+  );
 }

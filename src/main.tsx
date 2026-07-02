@@ -6,6 +6,10 @@ import '@xterm/xterm/css/xterm.css';
 import './theme/tokens.css';
 import App from './App';
 
+// Suppress the native (browser) right-click menu everywhere; our own context
+// menus are opened by explicit onContextMenu handlers on tabs/panes/cmds.
+document.addEventListener('contextmenu', (e) => e.preventDefault());
+
 // Note: no React.StrictMode — its double-invoked effects would spawn/kill/respawn
 // real PTY processes on every mount in dev.
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(<App />);

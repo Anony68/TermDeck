@@ -5,7 +5,6 @@ import { PresetIcon } from './PresetIcon';
 export function Toolbar() {
   const tab = useStore(activeTabSelector);
   const setLayout = useStore((s) => s.setLayout);
-  const openAddCmd = useStore((s) => s.openAddCmd);
   const openSettings = useStore((s) => s.openSettings);
   const sidebarVisible = useStore((s) => s.settings.sidebarVisible);
   const toggleSidebar = useStore((s) => s.toggleSidebar);
@@ -74,9 +73,6 @@ export function Toolbar() {
         Phiên được lưu tự động
       </div>
       <div style={{ flex: 1 }} />
-      <button className="accent-btn" onClick={() => openAddCmd()}>
-        ＋ Cmd mới
-      </button>
       <div
         className="icon-btn"
         title="Cài đặt"

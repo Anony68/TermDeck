@@ -50,10 +50,10 @@ export function TabStrip() {
                   if (e.key === 'Escape') setEditingId(null);
                 }}
                 style={{
-                  padding: '7px 10px',
-                  background: 'var(--surface)',
+                  padding: '6px 12px',
+                  background: 'var(--surface-3)',
                   border: '1px solid var(--accent)',
-                  borderRadius: '8px 8px 0 0',
+                  borderRadius: 8,
                   font: '600 12px var(--font-ui)',
                   color: 'var(--text)',
                   outline: 'none',
@@ -65,6 +65,7 @@ export function TabStrip() {
           return (
             <div
               key={t.id}
+              className={`tab-pill${active ? ' active' : ''}`}
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.setData(TAB_DND_MIME, t.id);
@@ -86,25 +87,9 @@ export function TabStrip() {
               onDoubleClick={() => startRename(t.id, t.name)}
               onContextMenu={(e) => {
                 e.preventDefault();
-                setActiveTab(t.id);
                 setMenu({ x: e.clientX, y: e.clientY, tabId: t.id });
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 7,
-                padding: '8px 14px',
-                background: active ? 'var(--surface)' : 'transparent',
-                border: active ? '1px solid var(--border-2)' : '1px solid transparent',
-                borderBottom: 'none',
-                borderRadius: '8px 8px 0 0',
-                outline: dragOverId === t.id ? '1px dashed var(--accent)' : 'none',
-                outlineOffset: '-1px',
-                font: `${active ? 600 : 400} 12px var(--font-ui)`,
-                color: active ? 'var(--text)' : 'var(--text-2)',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
+              style={{ outline: dragOverId === t.id ? '1.5px dashed var(--accent)' : undefined }}
             >
               {t.pinned ? (
                 <span title="Tab đã ghim" style={{ fontSize: 10, lineHeight: 1 }}>
@@ -118,17 +103,6 @@ export function TabStrip() {
                 )
               )}
               {t.name}
-              <span
-                className="tab-x"
-                title="Đóng tab"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(t.id);
-                }}
-                style={{ color: 'var(--text-muted)', fontWeight: 400, padding: '0 2px', borderRadius: 4 }}
-              >
-                ✕
-              </span>
             </div>
           );
         })}

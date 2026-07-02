@@ -122,6 +122,31 @@ input {
   color: var(--danger);
 }
 
+/* Smoother pill-style tabs. */
+.tab-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  border-radius: 8px;
+  font: 500 12px var(--font-ui);
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+  outline-offset: -1px;
+  transition: background 0.13s ease, color 0.13s ease, box-shadow 0.13s ease;
+}
+.tab-pill:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.tab-pill.active {
+  background: var(--surface-3);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--border-2);
+}
+
 .icon-btn {
   display: grid;
   place-items: center;

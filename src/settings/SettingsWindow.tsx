@@ -1,19 +1,30 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../state/store';
 import { SHELL_ORDER, SHELLS } from '../shells';
 import { LAYOUT_ORDER, LAYOUTS } from '../layouts';
 import { PresetIcon } from '../components/PresetIcon';
 import { FONT_ORDER, FONT_LABEL, FONT_PX } from '../fontSizes';
+import { checkUpdate, openUpdateUrl, getAppVersion, type UpdateResult } from '../ipc/update';
+import { pickFolder } from '../ipc/api';
 import type { Settings } from '../types';
 
-type Section = 'general' | 'session' | 'layout' | 'shells' | 'keys';
+type Section = 'general' | 'projects' | 'session' | 'layout' | 'shells' | 'keys' | 'update';
 
 const NAV: Array<{ id: Section; label: string }> = [
   { id: 'general', label: 'Chung' },
+  { id: 'projects', label: 'Dự án' },
   { id: 'session', label: 'Phiên & Khôi phục' },
   { id: 'layout', label: 'Bố cục mặc định' },
   { id: 'shells', label: 'Cấu hình shell' },
   { id: 'keys', label: 'Phím tắt' },
+  { id: 'update', label: 'Cập nhật' },
+];
+
+const UI_SCALES: Array<{ v: number; label: string }> = [
+  { v: 0.9, label: '90%' },
+  { v: 1, label: '100%' },
+  { v: 1.1, label: '110%' },
+  { v: 1.25, label: '125%' },
 ];
 
 function fmtDate(ms: number): string {
@@ -23,7 +34,7 @@ function fmtDate(ms: number): string {
 }
 
 export function SettingsWindow() {
-  const [section, setSection] = useState<Section>('session');
+  const [section, setSection] = useState<Section>('general');
   const closeSettings = useStore((s) => s.closeSettings);
 
   return (
@@ -97,9 +108,11 @@ export function SettingsWindow() {
           <div style={{ flex: 1, padding: '24px 28px', overflow: 'auto', minWidth: 0 }}>
             {section === 'session' && <SessionSection />}
             {section === 'general' && <GeneralSection />}
+            {section === 'projects' && <ProjectsSection />}
             {section === 'layout' && <LayoutSection />}
             {section === 'shells' && <ShellsSection />}
             {section === 'keys' && <KeysSection />}
+            {section === 'update' && <UpdateSection />}
           </div>
         </div>
       </div>
@@ -154,7 +167,7 @@ function SessionSection() {
       <div>
         <div style={{ font: '600 15px var(--font-ui)', color: 'var(--text)' }}>Phiên & Khôi phục</div>
         <div style={{ font: '400 12px var(--font-ui)', color: 'var(--text-2)', marginTop: 3 }}>
-          Khi tắt ứng dụng, toàn bộ tab, cmd, đường dẫn và bố cục grid được lưu lại và mở đúng như cũ.
+          Khi tắt ứng dụng, toàn bộ tab, terminal, đường dẫn và bố cục grid được lưu lại và mở đúng như cũ.
         </div>
       </div>
 
@@ -167,23 +180,23 @@ function SessionSection() {
         }}
       >
         <ToggleRow
-          title="Mở lại các cmd khi khởi động"
-          desc="Khôi phục toàn bộ tab và cmd của phiên trước"
+          title="Mở lại các terminal khi khởi động"
+          desc="Khôi phục toàn bộ tab và terminal của phiên trước"
           settingKey="restoreOnStartup"
         />
         <ToggleRow
           title="Khôi phục đúng đường dẫn làm việc"
-          desc="Mỗi cmd mở lại đúng thư mục đã đặt"
+          desc="Mỗi terminal mở lại đúng thư mục đã đặt"
           settingKey="restoreCwd"
         />
         <ToggleRow
           title="Khôi phục bố cục grid từng tab"
-          desc="Giữ nguyên mẫu grid và vị trí từng cmd trong lưới"
+          desc="Giữ nguyên mẫu grid và vị trí từng terminal trong lưới"
           settingKey="restoreGrid"
         />
         <ToggleRow
           title="Tự chạy lại lệnh đã cấu hình"
-          desc='Chạy lại "lệnh chạy sẵn" của mỗi cmd — cẩn thận với lệnh có tác dụng phụ'
+          desc='Chạy lại "lệnh chạy sẵn" của mỗi terminal — cẩn thận với lệnh có tác dụng phụ'
           settingKey="autoRunCommand"
         />
       </div>
@@ -207,9 +220,9 @@ function SessionSection() {
             PHIÊN GẦN ĐÂY
           </span>
           <button
-            className="link-btn"
+            className="ghost-btn"
             onClick={captureSnapshot}
-            style={{ color: 'var(--text-2)' }}
+            style={{ padding: '5px 12px', fontSize: 11 }}
           >
             Lưu ảnh phiên hiện tại
           </button>
@@ -235,7 +248,7 @@ function SessionSection() {
               Bây giờ
             </span>
             <span style={{ font: '400 11.5px var(--font-ui)', color: 'var(--text-muted)', flex: 1 }}>
-              {tabs.length} tab · {liveCmd} cmd
+              {tabs.length} tab · {liveCmd} terminal
             </span>
             <span style={{ font: '600 11px var(--font-ui)', color: 'var(--accent)' }}>
               Phiên hiện tại
@@ -258,7 +271,7 @@ function SessionSection() {
               <span
                 style={{ font: '400 11.5px var(--font-ui)', color: 'var(--text-muted)', flex: 1 }}
               >
-                {snap.tabCount} tab · {snap.cmdCount} cmd
+                {snap.tabCount} tab · {snap.cmdCount} terminal
               </span>
               <span className="link-btn" onClick={() => restoreSnapshot(snap.at)}>
                 Khôi phục
@@ -278,6 +291,7 @@ function SessionSection() {
 
 function GeneralSection() {
   const fontSize = useStore((s) => s.settings.fontSize);
+  const uiScale = useStore((s) => s.settings.uiScale);
   const updateSettings = useStore((s) => s.updateSettings);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -286,8 +300,39 @@ function GeneralSection() {
         <div
           style={{ font: '400 12px var(--font-ui)', color: 'var(--text-2)', lineHeight: 1.7, marginTop: 3 }}
         >
-          TermDeck — dashboard quản lý cmd / Git Bash / PowerShell / WSL. Gom terminal theo tab, xếp
-          thành grid, đặt tên và khôi phục nguyên trạng khi mở lại.
+          TermDeck — dashboard quản lý terminal: CMD / Git Bash / PowerShell / WSL. Gom terminal theo
+          tab, xếp thành grid, đặt tên và khôi phục nguyên trạng khi mở lại.
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ font: '600 11px var(--font-ui)', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
+          CỠ CHỮ / THU PHÓNG TOÀN ỨNG DỤNG
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {UI_SCALES.map((s) => {
+            const active = Math.abs(uiScale - s.v) < 0.001;
+            return (
+              <div
+                key={s.v}
+                onClick={() => updateSettings({ uiScale: s.v })}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  background: active ? 'var(--accent-soft-2)' : 'var(--surface-2)',
+                  border: `1px solid ${active ? 'var(--accent)' : 'var(--border-2)'}`,
+                  color: active ? 'var(--accent)' : 'var(--text-2)',
+                  font: `${active ? 600 : 400} 12.5px var(--font-ui)`,
+                }}
+              >
+                {s.label}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ font: '400 11px var(--font-ui)', color: 'var(--text-muted)' }}>
+          Phóng to/thu nhỏ toàn bộ giao diện (chữ, nút, terminal).
         </div>
       </div>
 
@@ -436,8 +481,8 @@ function ShellsSection() {
 function KeysSection() {
   const keys: Array<[string, string]> = [
     ['Ctrl + T', 'Tab mới'],
-    ['Ctrl + N', 'Cmd mới'],
-    ['Ctrl + W', 'Đóng cmd đang chọn'],
+    ['Ctrl + N', 'Terminal mới'],
+    ['Ctrl + W', 'Đóng terminal đang chọn'],
     ['Ctrl + Tab', 'Chuyển tab'],
     ['Alt + 1..6', 'Đổi bố cục grid'],
   ];
@@ -481,6 +526,199 @@ function KeysSection() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ProjectsSection() {
+  const projects = useStore((s) => s.projects);
+  const addProject = useStore((s) => s.addProject);
+  const updateProject = useStore((s) => s.updateProject);
+  const removeProject = useStore((s) => s.removeProject);
+  const [name, setName] = useState('');
+  const [path, setPath] = useState('');
+
+  const add = () => {
+    if (!name.trim()) return;
+    addProject(name.trim(), path.trim() || undefined);
+    setName('');
+    setPath('');
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+        <div style={{ font: '600 15px var(--font-ui)', color: 'var(--text)' }}>Dự án</div>
+        <div style={{ font: '400 12px var(--font-ui)', color: 'var(--text-2)', marginTop: 3 }}>
+          Lưu danh sách dự án (thư mục làm việc) để gợi ý & chọn nhanh khi tạo terminal. Danh sách
+          terminal ở sidebar được nhóm theo dự án.
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ font: '600 11px var(--font-ui)', color: 'var(--text-2)' }}>TÊN DỰ ÁN</label>
+          <input
+            className="field"
+            placeholder="VD: Dự án API"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && add()}
+          />
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ font: '600 11px var(--font-ui)', color: 'var(--text-2)' }}>THƯ MỤC (tùy chọn)</label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              className="field mono"
+              placeholder="D:\work\api"
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+            />
+            <button
+              className="ghost-btn"
+              style={{ padding: '8px 12px' }}
+              onClick={async () => {
+                const p = await pickFolder(path || undefined);
+                if (p) setPath(p);
+              }}
+            >
+              Chọn…
+            </button>
+          </div>
+        </div>
+        <button className="accent-btn" style={{ height: 35 }} onClick={add}>
+          Thêm
+        </button>
+      </div>
+
+      <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border-2)', borderRadius: 10, overflow: 'hidden' }}>
+        {projects.length === 0 && (
+          <div style={{ padding: '14px 16px', font: '400 11.5px var(--font-ui)', color: 'var(--text-faint)' }}>
+            Chưa có dự án nào.
+          </div>
+        )}
+        {projects.map((pr, i) => (
+          <div
+            key={pr.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '10px 14px',
+              borderBottom: i < projects.length - 1 ? '1px solid var(--border)' : 'none',
+            }}
+          >
+            <input
+              className="field"
+              value={pr.name}
+              onChange={(e) => updateProject(pr.id, { name: e.target.value })}
+              style={{ flex: '0 0 40%' }}
+            />
+            <input
+              className="field mono"
+              placeholder="(không có thư mục)"
+              value={pr.path ?? ''}
+              onChange={(e) => updateProject(pr.id, { path: e.target.value || undefined })}
+              style={{ flex: 1 }}
+            />
+            <span
+              className="pane-ctl danger"
+              title="Xóa dự án"
+              onClick={() => removeProject(pr.id)}
+              style={{ width: 22, height: 22, fontSize: 12 }}
+            >
+              ✕
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UpdateSection() {
+  const githubRepo = useStore((s) => s.settings.githubRepo);
+  const updateSettings = useStore((s) => s.updateSettings);
+  const [version, setVersion] = useState('…');
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<UpdateResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void getAppVersion().then(setVersion);
+  }, []);
+
+  const check = async () => {
+    setChecking(true);
+    setError(null);
+    setResult(null);
+    try {
+      setResult(await checkUpdate(githubRepo));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+        <div style={{ font: '600 15px var(--font-ui)', color: 'var(--text)' }}>Cập nhật</div>
+        <div style={{ font: '400 12px var(--font-ui)', color: 'var(--text-2)', marginTop: 3 }}>
+          Phiên bản hiện tại:{' '}
+          <span style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>v{version}</span>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <label style={{ font: '600 11px var(--font-ui)', color: 'var(--text-2)' }}>GITHUB REPO (owner/repo)</label>
+        <input
+          className="field mono"
+          placeholder="vd: yourname/termdeck"
+          value={githubRepo}
+          onChange={(e) => updateSettings({ githubRepo: e.target.value })}
+        />
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <button className="accent-btn" onClick={check} disabled={checking}>
+          {checking ? 'Đang kiểm tra…' : 'Kiểm tra cập nhật'}
+        </button>
+        {result && !result.hasUpdate && (
+          <span style={{ font: '400 12px var(--font-ui)', color: 'var(--accent)' }}>
+            ✔ Đã là bản mới nhất
+          </span>
+        )}
+        {error && <span style={{ font: '400 12px var(--font-ui)', color: 'var(--danger)' }}>{error}</span>}
+      </div>
+
+      {result?.hasUpdate && (
+        <div
+          style={{
+            background: 'var(--surface-2)',
+            border: '1px solid var(--accent)',
+            borderRadius: 10,
+            padding: '14px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <div style={{ font: '600 12.5px var(--font-ui)', color: 'var(--text)' }}>
+              Có bản mới: v{result.latest}
+            </div>
+            <div style={{ font: '400 11px var(--font-ui)', color: 'var(--text-muted)' }}>
+              Bạn đang dùng v{result.current}
+            </div>
+          </div>
+          <button className="accent-btn" onClick={() => void openUpdateUrl(result.url)}>
+            Tải bản mới
+          </button>
+        </div>
+      )}
     </div>
   );
 }

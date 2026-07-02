@@ -8,7 +8,8 @@ export function Grid() {
   const tab = useStore(activeTabSelector);
   const panes = useStore((s) => s.panes);
   const openAddCmd = useStore((s) => s.openAddCmd);
-  const openPaneFromSaved = useStore((s) => s.openPaneFromSaved);
+  const showPaneInTab = useStore((s) => s.showPaneInTab);
+  const movePaneToSlot = useStore((s) => s.movePaneToSlot);
   const [dragSlot, setDragSlot] = useState<number | null>(null);
 
   if (!tab) return null;
@@ -50,7 +51,10 @@ export function Grid() {
             onDrop={(e) => {
               const id = e.dataTransfer.getData(SAVED_DND_MIME);
               setDragSlot(null);
-              if (id) openPaneFromSaved(id, pane ? undefined : slot);
+              if (id) {
+                if (items.some((i) => i.paneId === id)) movePaneToSlot(id, slot);
+                else showPaneInTab(id, slot);
+              }
             }}
           >
             {pane ? (

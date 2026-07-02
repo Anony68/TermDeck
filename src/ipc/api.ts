@@ -23,6 +23,17 @@ export async function pickFolder(defaultPath?: string): Promise<string | null> {
   return typeof res === 'string' ? res : null;
 }
 
+/** Subscribe to per-cmd CPU/RAM stats emitted by the Rust sampler. */
+export async function onPaneStats(
+  cb: (list: Array<{ paneId: string; cpu: number; mem: number }>) => void
+): Promise<() => void> {
+  if (!IS_TAURI) return () => {};
+  const { listen } = await import('@tauri-apps/api/event');
+  return listen<Array<{ paneId: string; cpu: number; mem: number }>>('pane://stats', (e) =>
+    cb(e.payload)
+  );
+}
+
 /** Custom-titlebar window controls. */
 export const windowControls = {
   async minimize() {

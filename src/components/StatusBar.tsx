@@ -38,7 +38,7 @@ export function StatusBar() {
     >
       <span>tab: {tab.name}</span>
       <span>
-        {cmdCount} cmd · {running} đang chạy
+        {cmdCount} terminal · {running} đang chạy
       </span>
       <span style={{ flex: 1 }} />
       <span>bố cục {label}</span>

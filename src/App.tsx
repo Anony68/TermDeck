@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useStore } from './state/store';
-import { detectShells } from './ipc/api';
+import { detectShells, onPaneStats } from './ipc/api';
+import { IS_TAURI } from './ipc/env';
 import { LAYOUT_ORDER } from './layouts';
 import { TitleBar } from './components/TitleBar';
 import { Toolbar } from './components/Toolbar';
@@ -14,9 +15,21 @@ import { SettingsWindow } from './settings/SettingsWindow';
 export default function App() {
   const hydrated = useStore((s) => s.hydrated);
   const sidebarVisible = useStore((s) => s.settings.sidebarVisible);
+  const uiScale = useStore((s) => s.settings.uiScale);
   const addCmdOpen = useStore((s) => s.ui.addCmdOpen);
   const editPaneId = useStore((s) => s.ui.editPaneId);
   const settingsOpen = useStore((s) => s.ui.settingsOpen);
+
+  // App-wide zoom (font size for the whole UI).
+  useEffect(() => {
+    if (!IS_TAURI) {
+      document.body.style.setProperty('zoom', String(uiScale));
+      return;
+    }
+    void import('@tauri-apps/api/webview').then(({ getCurrentWebview }) =>
+      getCurrentWebview().setZoom(uiScale).catch(() => {})
+    );
+  }, [uiScale]);
 
   // Startup: restore session + detect shells + snapshot the restored session.
   useEffect(() => {
@@ -28,6 +41,11 @@ export default function App() {
     detectShells()
       .then((sh) => useStore.getState().setShells(sh))
       .catch(() => {});
+    let unlisten: (() => void) | undefined;
+    void onPaneStats((list) => useStore.getState().setStats(list)).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
   }, []);
 
   // Global keyboard shortcuts.

@@ -12,7 +12,8 @@ export function AddCmdDialog() {
   const shells = useStore((s) => s.shells);
   const addPane = useStore((s) => s.addPane);
   const updatePane = useStore((s) => s.updatePane);
-  const addToLibrary = useStore((s) => s.addToLibrary);
+  const projects = useStore((s) => s.projects);
+  const addProject = useStore((s) => s.addProject);
   const closeAddCmd = useStore((s) => s.closeAddCmd);
   const closeEditCmd = useStore((s) => s.closeEditCmd);
 
@@ -30,23 +31,38 @@ export function AddCmdDialog() {
   const [cwd, setCwd] = useState(editPane?.cwd ?? '');
   const [presetCommand, setPresetCommand] = useState(editPane?.presetCommand ?? '');
   const [autoStart, setAutoStart] = useState(editPane?.autoStart ?? true);
-  const [saveToLib, setSaveToLib] = useState(!editing);
+  const [projectId, setProjectId] = useState<string>(editPane?.projectId ?? '');
+  const [creatingNew, setCreatingNew] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+
+  const onProjectChange = (v: string) => {
+    if (v === '__new__') {
+      setCreatingNew(true);
+      setProjectId('');
+      return;
+    }
+    setCreatingNew(false);
+    setProjectId(v);
+    const pr = projects.find((p) => p.id === v);
+    if (pr?.path && !cwd.trim()) setCwd(pr.path);
+  };
 
   const submit = () => {
     const finalName = name.trim() || SHELLS[shell].label;
+    let finalProjectId: string | undefined = projectId || undefined;
+    if (creatingNew && newProjectName.trim()) {
+      finalProjectId = addProject(newProjectName.trim(), cwd.trim() || undefined);
+    }
     const fields = {
       name: finalName,
       shell,
       cwd: cwd.trim(),
       presetCommand: presetCommand.trim() || undefined,
       autoStart,
+      projectId: finalProjectId,
     };
-    const savedCmdId = saveToLib ? addToLibrary(fields) : undefined;
-    if (editing && editPaneId) {
-      updatePane(editPaneId, savedCmdId ? { ...fields, savedCmdId } : fields);
-    } else {
-      addPane({ ...fields, savedCmdId, slot: slot ?? undefined });
-    }
+    if (editing && editPaneId) updatePane(editPaneId, fields);
+    else addPane({ ...fields, slot: slot ?? undefined });
     close();
   };
 
@@ -75,7 +91,7 @@ export function AddCmdDialog() {
       >
         <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px 0' }}>
           <span style={{ font: '600 15px var(--font-ui)', color: 'var(--text)', flex: 1 }}>
-            {editing ? 'Cài đặt cmd' : 'Thêm cmd mới'}
+            {editing ? 'Cài đặt Terminal' : 'Thêm Terminal mới'}
           </span>
           <span className="icon-btn" onClick={close} style={{ width: 24, height: 24, fontSize: 13 }}>
             ✕
@@ -157,15 +173,42 @@ export function AddCmdDialog() {
             />
           </Field>
 
+          <Field
+            label={
+              <>
+                DỰ ÁN <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(tùy chọn)</span>
+              </>
+            }
+          >
+            <select
+              className="field"
+              value={creatingNew ? '__new__' : projectId}
+              onChange={(e) => onProjectChange(e.target.value)}
+              style={{ cursor: 'pointer' }}
+            >
+              <option value="">(Không thuộc dự án)</option>
+              {projects.map((pr) => (
+                <option key={pr.id} value={pr.id}>
+                  {pr.name}
+                </option>
+              ))}
+              <option value="__new__">＋ Tạo dự án mới…</option>
+            </select>
+            {creatingNew && (
+              <input
+                className="field"
+                placeholder="Tên dự án mới"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                style={{ marginTop: 6 }}
+              />
+            )}
+          </Field>
+
           <Row
-            label="Tự mở lại cmd này khi khởi động ứng dụng"
+            label="Tự mở lại terminal này khi khởi động ứng dụng"
             on={autoStart}
             onToggle={() => setAutoStart((v) => !v)}
-          />
-          <Row
-            label='Lưu vào thư viện "CMD ĐÃ LƯU"'
-            on={saveToLib}
-            onToggle={() => setSaveToLib((v) => !v)}
           />
         </div>
 
@@ -179,11 +222,7 @@ export function AddCmdDialog() {
             borderTop: '1px solid var(--border)',
           }}
         >
-          <button
-            className="icon-btn"
-            onClick={close}
-            style={{ padding: '8px 18px', font: '600 12.5px var(--font-ui)', color: 'var(--text-2)' }}
-          >
+          <button className="ghost-btn" onClick={close} style={{ padding: '8px 18px', fontSize: 12.5 }}>
             Hủy
           </button>
           <button className="accent-btn" style={{ padding: '8px 18px', fontSize: 12.5 }} onClick={submit}>

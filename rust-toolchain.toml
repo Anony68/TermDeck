@@ -1,5 +1,0 @@
-# Tauri on Windows requires the MSVC toolchain (the gnu toolchain is not supported
-# for the windows/webview2 crates). Pin it here so cargo uses MSVC even though the
-# machine's default host toolchain is x86_64-pc-windows-gnu.
-[toolchain]
-channel = "stable-x86_64-pc-windows-msvc"

@@ -23,8 +23,17 @@ export interface Pane {
   cwd: string;
   presetCommand?: string;
   autoStart: boolean;
-  /** Pinned cmds are shown in every tab. */
+  /** Pinned terminals are shown in every tab. */
   pinned?: boolean;
+  /** Optional project this terminal belongs to (for sidebar grouping). */
+  projectId?: string;
+}
+
+/** A saved project (a working folder) used to group and quick-pick terminals. */
+export interface Project {
+  id: string;
+  name: string;
+  path?: string;
 }
 
 /** A tab's reference to a global pane, with its position in that tab's grid. */
@@ -51,6 +60,10 @@ export interface Settings {
   shellPaths: Partial<Record<ShellKind, string>>;
   sidebarVisible: boolean;
   fontSize: FontSize;
+  /** App-wide UI zoom factor (e.g. 0.9, 1, 1.1). */
+  uiScale: number;
+  /** "owner/repo" used by the GitHub update checker. */
+  githubRepo: string;
 }
 
 export interface Snapshot {
@@ -65,6 +78,7 @@ export interface PersistedState {
   version: number;
   tabs: Tab[];
   panes: Pane[];
+  projects: Project[];
   activeTabId: string;
   settings: Settings;
   snapshots: Snapshot[];

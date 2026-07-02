@@ -28,16 +28,24 @@ struct PtySession {
 }
 
 /// Managed Tauri state. `sessions` is an `Arc` so reader/waiter threads can hold
-/// a clone and clean up when a process exits.
+/// a clone and clean up when a process exits. `pids` maps pane -> child PID for
+/// the stats sampler.
 pub struct PtyManager {
     sessions: Arc<Mutex<HashMap<String, PtySession>>>,
+    pids: Arc<Mutex<HashMap<String, u32>>>,
 }
 
 impl PtyManager {
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            pids: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Clone of the pane -> PID map for the background stats thread.
+    pub fn pids(&self) -> Arc<Mutex<HashMap<String, u32>>> {
+        self.pids.clone()
     }
 
     pub fn spawn(
@@ -85,8 +93,13 @@ impl PtyManager {
         drop(pair.slave);
 
         let killer = child.clone_killer();
+        let child_pid = child.process_id();
         let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
         let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+
+        if let Some(pid) = child_pid {
+            self.pids.lock().unwrap().insert(pane_id.clone(), pid);
+        }
 
         // Optional auto-run command (only sent when the caller opts in).
         if let Some(c) = command {
@@ -130,10 +143,12 @@ impl PtyManager {
         // Waiter thread: report the exit code and drop the session.
         let exit_ch = on_event;
         let sessions = self.sessions.clone();
+        let pids = self.pids.clone();
         std::thread::spawn(move || {
             let code = child.wait().map(|s| s.exit_code() as i32).unwrap_or(-1);
             let _ = exit_ch.send(PtyEvent::Exit { code });
             sessions.lock().unwrap().remove(&pane_id);
+            pids.lock().unwrap().remove(&pane_id);
         });
 
         Ok(())
@@ -171,6 +186,7 @@ impl PtyManager {
         if let Some(mut session) = self.sessions.lock().unwrap().remove(&pane_id) {
             let _ = session.killer.kill();
         }
+        self.pids.lock().unwrap().remove(&pane_id);
         Ok(())
     }
 }

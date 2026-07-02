@@ -33,7 +33,7 @@ export function TitleBar() {
         <span style={{ font: '600 12.5px var(--font-ui)', color: 'var(--text)' }}>TermDeck</span>
       </div>
 
-      <div style={{ marginLeft: 24, alignSelf: 'flex-end' }}>
+      <div style={{ marginLeft: 20, alignSelf: 'center' }}>
         <TabStrip />
       </div>
 

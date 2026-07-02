@@ -4,6 +4,7 @@ import type {
   Pane,
   PaneStatus,
   PersistedState,
+  Project,
   Settings,
   ShellInfo,
   ShellKind,
@@ -27,6 +28,8 @@ const DEFAULT_SETTINGS: Settings = {
   shellPaths: {},
   sidebarVisible: true,
   fontSize: 'medium',
+  uiScale: 1,
+  githubRepo: '',
 };
 
 const STORE_VERSION = 4;
@@ -37,6 +40,13 @@ interface RuntimeInfo {
   exitCode?: number;
   nonce: number;
   runOnSpawn: boolean;
+  /** When the current process started (ms epoch) — for uptime. */
+  startedAt: number;
+}
+
+export interface PaneStat {
+  cpu: number;
+  mem: number;
 }
 
 export interface NewPaneInput {
@@ -45,18 +55,22 @@ export interface NewPaneInput {
   cwd: string;
   presetCommand?: string;
   autoStart: boolean;
+  projectId?: string;
   slot?: number;
 }
 
 interface AppState {
   tabs: Tab[];
-  /** All cmds (the sidebar list). Each runs in the background regardless of tabs. */
+  /** All terminals (the sidebar list). Each runs in the background regardless of tabs. */
   panes: Pane[];
+  projects: Project[];
   activeTabId: string;
   settings: Settings;
   snapshots: Snapshot[];
 
   runtime: Record<string, RuntimeInfo>;
+  /** Live CPU%/memory per pane (from the Rust sampler; not persisted). */
+  stats: Record<string, PaneStat>;
   focusedPaneId: string | null;
   shells: ShellInfo[];
   ui: {
@@ -70,6 +84,7 @@ interface AppState {
 
   hydrate: () => Promise<void>;
   setShells: (s: ShellInfo[]) => void;
+  setStats: (list: Array<{ paneId: string; cpu: number; mem: number }>) => void;
 
   addTab: () => void;
   closeTab: (id: string) => void;
@@ -84,6 +99,8 @@ interface AppState {
   showPaneInTab: (paneId: string, slot?: number) => void;
   /** Hide a cmd from the active tab (process keeps running). */
   removeFromTab: (paneId: string) => void;
+  /** Move a cmd to a specific slot in the active tab (swaps if occupied). */
+  movePaneToSlot: (paneId: string, slot: number) => void;
   /** Stop a cmd's process but keep the cmd (Tắt). */
   stopPane: (paneId: string) => void;
   /** Delete a cmd everywhere and kill its process (Xóa). */
@@ -98,6 +115,10 @@ interface AppState {
 
   updateSettings: (patch: Partial<Settings>) => void;
   toggleSidebar: () => void;
+
+  addProject: (name: string, path?: string) => string;
+  updateProject: (id: string, patch: Partial<Project>) => void;
+  removeProject: (id: string) => void;
 
   captureSnapshot: () => void;
   restoreSnapshot: (at: number) => void;
@@ -141,8 +162,14 @@ function firstEmptySlot(items: TabItem[], layout: LayoutPreset): number {
 
 function buildRuntime(panes: Pane[], runOnSpawn: boolean): Record<string, RuntimeInfo> {
   const rt: Record<string, RuntimeInfo> = {};
+  const now = Date.now();
   for (const p of panes)
-    rt[p.id] = { status: 'running', nonce: 0, runOnSpawn: runOnSpawn && !!p.presetCommand };
+    rt[p.id] = {
+      status: 'running',
+      nonce: 0,
+      runOnSpawn: runOnSpawn && !!p.presetCommand,
+      startedAt: now,
+    };
   return rt;
 }
 
@@ -156,6 +183,7 @@ function scheduleSave(get: () => AppState) {
       version: STORE_VERSION,
       tabs: s.tabs,
       panes: s.panes,
+      projects: s.projects,
       activeTabId: s.activeTabId,
       settings: s.settings,
       snapshots: s.snapshots,
@@ -192,10 +220,12 @@ export const useStore = create<AppState>((set, get) => {
   return {
     tabs: [freshTab('grid2x2', 'Tab 1')],
     panes: [],
+    projects: [],
     activeTabId: '',
     settings: DEFAULT_SETTINGS,
     snapshots: [],
     runtime: {},
+    stats: {},
     focusedPaneId: null,
     shells: [],
     ui: { addCmdOpen: false, addCmdSlot: null, settingsOpen: false, editPaneId: null },
@@ -206,10 +236,20 @@ export const useStore = create<AppState>((set, get) => {
       const p = await loadPersisted();
       const settings: Settings = { ...DEFAULT_SETTINGS, ...(p?.settings ?? {}) };
       const snapshots = p?.snapshots ?? [];
+      const projects = p?.projects ?? [];
 
       if (!p || p.version !== STORE_VERSION || !settings.restoreOnStartup) {
         const t = freshTab(settings.defaultLayout, 'Tab 1');
-        set({ tabs: [t], panes: [], activeTabId: t.id, settings, snapshots, runtime: {}, hydrated: true });
+        set({
+          tabs: [t],
+          panes: [],
+          projects,
+          activeTabId: t.id,
+          settings,
+          snapshots,
+          runtime: {},
+          hydrated: true,
+        });
         return;
       }
 
@@ -232,6 +272,7 @@ export const useStore = create<AppState>((set, get) => {
       set({
         tabs,
         panes,
+        projects,
         activeTabId,
         settings,
         snapshots,
@@ -241,6 +282,12 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     setShells: (shells) => set({ shells }),
+
+    setStats: (list) => {
+      const next: Record<string, PaneStat> = {};
+      for (const s of list) next[s.paneId] = { cpu: s.cpu, mem: s.mem };
+      set({ stats: next });
+    },
 
     addTab: () => {
       const t = freshTab(get().settings.defaultLayout);
@@ -294,11 +341,12 @@ export const useStore = create<AppState>((set, get) => {
 
       const pane: Pane = {
         id: uid(),
-        name: input.name.trim() || 'cmd',
+        name: input.name.trim() || 'Terminal',
         shell: input.shell,
         cwd: input.cwd,
         presetCommand: input.presetCommand?.trim() || undefined,
         autoStart: input.autoStart,
+        projectId: input.projectId,
       };
       commit({
         panes: [...panes, pane],
@@ -307,7 +355,12 @@ export const useStore = create<AppState>((set, get) => {
         ),
         runtime: {
           ...runtime,
-          [pane.id]: { status: 'running', nonce: 0, runOnSpawn: !!pane.presetCommand },
+          [pane.id]: {
+            status: 'running',
+            nonce: 0,
+            runOnSpawn: !!pane.presetCommand,
+            startedAt: Date.now(),
+          },
         },
         focusedPaneId: pane.id,
       });
@@ -335,10 +388,33 @@ export const useStore = create<AppState>((set, get) => {
       });
     },
 
+    movePaneToSlot: (paneId, slot) => {
+      const { tabs, activeTabId, panes } = get();
+      const tab = tabs.find((t) => t.id === activeTabId);
+      if (!tab) return;
+      const shown = displayItems(tab, panes);
+      const current = shown.find((i) => i.paneId === paneId);
+      const occupant = shown.find((i) => i.slot === slot && i.paneId !== paneId);
+      const oldSlot = current?.slot ?? slot;
+      const items = tab.items.map((i) => ({ ...i }));
+      const ensure = (pid: string, s: number) => {
+        const it = items.find((x) => x.paneId === pid);
+        if (it) it.slot = s;
+        else items.push({ paneId: pid, slot: s });
+      };
+      ensure(paneId, slot);
+      if (occupant) ensure(occupant.paneId, oldSlot); // swap
+      commit({
+        tabs: tabs.map((t) => (t.id === activeTabId ? { ...t, items } : t)),
+        focusedPaneId: paneId,
+      });
+    },
+
     stopPane: (paneId) => {
       killPty(paneId);
       const { runtime } = get();
-      const prev = runtime[paneId] ?? { nonce: 0, runOnSpawn: false, status: 'running' as PaneStatus };
+      const prev =
+        runtime[paneId] ?? { nonce: 0, runOnSpawn: false, status: 'running' as PaneStatus, startedAt: Date.now() };
       set({ runtime: { ...runtime, [paneId]: { ...prev, status: 'exited' } } });
     },
 
@@ -379,6 +455,7 @@ export const useStore = create<AppState>((set, get) => {
           status: 'running',
           nonce: (runtime[paneId]?.nonce ?? 0) + 1,
           runOnSpawn: !!updated?.presetCommand,
+          startedAt: Date.now(),
         };
       }
       commit({ panes: newPanes, runtime: rt });
@@ -390,7 +467,12 @@ export const useStore = create<AppState>((set, get) => {
       set({
         runtime: {
           ...runtime,
-          [paneId]: { status: 'running', nonce: (prev?.nonce ?? 0) + 1, runOnSpawn: false },
+          [paneId]: {
+            status: 'running',
+            nonce: (prev?.nonce ?? 0) + 1,
+            runOnSpawn: false,
+            startedAt: Date.now(),
+          },
         },
       });
     },
@@ -421,7 +503,8 @@ export const useStore = create<AppState>((set, get) => {
 
     setPaneStatus: (paneId, status, exitCode) => {
       const { runtime } = get();
-      const prev = runtime[paneId] ?? { status: 'running', nonce: 0, runOnSpawn: false };
+      const prev =
+        runtime[paneId] ?? { status: 'running', nonce: 0, runOnSpawn: false, startedAt: Date.now() };
       set({ runtime: { ...runtime, [paneId]: { ...prev, status, exitCode } } });
     },
 
@@ -439,6 +522,24 @@ export const useStore = create<AppState>((set, get) => {
 
     toggleSidebar: () =>
       commit({ settings: { ...get().settings, sidebarVisible: !get().settings.sidebarVisible } }),
+
+    addProject: (name, path) => {
+      const id = uid();
+      commit({ projects: [...get().projects, { id, name: name.trim() || 'Dự án', path }] });
+      return id;
+    },
+
+    updateProject: (id, patch) =>
+      commit({
+        projects: get().projects.map((pr) => (pr.id === id ? { ...pr, ...patch } : pr)),
+      }),
+
+    removeProject: (id) =>
+      commit({
+        projects: get().projects.filter((pr) => pr.id !== id),
+        // Detach terminals from the removed project.
+        panes: get().panes.map((p) => (p.projectId === id ? { ...p, projectId: undefined } : p)),
+      }),
 
     captureSnapshot: () => {
       const { tabs, panes, snapshots } = get();
