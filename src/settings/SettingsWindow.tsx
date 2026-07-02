@@ -6,6 +6,7 @@ import { PresetIcon } from '../components/PresetIcon';
 import { FONT_ORDER, FONT_LABEL, FONT_PX } from '../fontSizes';
 import { checkUpdate, openUpdateUrl, getAppVersion, type UpdateResult } from '../ipc/update';
 import { pickFolder } from '../ipc/api';
+import { exportBackup, importBackup } from '../ipc/backup';
 import type { Settings } from '../types';
 
 type Section = 'general' | 'projects' | 'session' | 'layout' | 'shells' | 'keys' | 'update';
@@ -161,6 +162,9 @@ function SessionSection() {
   const liveCmd = useStore((s) => s.panes.length);
   const restoreSnapshot = useStore((s) => s.restoreSnapshot);
   const captureSnapshot = useStore((s) => s.captureSnapshot);
+  const exportData = useStore((s) => s.exportData);
+  const importData = useStore((s) => s.importData);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -199,6 +203,47 @@ function SessionSection() {
           desc='Chạy lại "lệnh chạy sẵn" của mỗi terminal — cẩn thận với lệnh có tác dụng phụ'
           settingKey="autoRunCommand"
         />
+      </div>
+
+      <div>
+        <div style={{ font: '600 11px var(--font-ui)', color: 'var(--text-muted)', letterSpacing: '0.08em', marginBottom: 8 }}>
+          SAO LƯU DỮ LIỆU
+        </div>
+        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border-2)', borderRadius: 10, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ font: '600 12.5px var(--font-ui)', color: 'var(--text)' }}>Xuất / Nhập workspace</div>
+            <div style={{ font: '400 11px var(--font-ui)', color: 'var(--text-muted)' }}>
+              Sao lưu toàn bộ terminal, tab, dự án, cài đặt ra file .json — hoặc nhập lại để chuyển máy.
+            </div>
+            {msg && (
+              <div style={{ font: '400 11px var(--font-ui)', color: msg.ok ? 'var(--accent)' : 'var(--danger)', marginTop: 4 }}>
+                {msg.text}
+              </div>
+            )}
+          </div>
+          <button
+            className="ghost-btn"
+            style={{ padding: '6px 14px' }}
+            onClick={async () => {
+              const ok = await exportBackup(exportData());
+              if (ok) setMsg({ ok: true, text: 'Đã xuất backup' });
+            }}
+          >
+            Xuất JSON
+          </button>
+          <button
+            className="ghost-btn"
+            style={{ padding: '6px 14px' }}
+            onClick={async () => {
+              const json = await importBackup();
+              if (json == null) return;
+              const ok = importData(json);
+              setMsg(ok ? { ok: true, text: 'Đã nhập backup thành công' } : { ok: false, text: 'File không hợp lệ' });
+            }}
+          >
+            Nhập JSON
+          </button>
+        </div>
       </div>
 
       <div>

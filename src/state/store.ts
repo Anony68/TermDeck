@@ -123,6 +123,9 @@ interface AppState {
   captureSnapshot: () => void;
   restoreSnapshot: (at: number) => void;
 
+  exportData: () => string;
+  importData: (json: string) => boolean;
+
   openAddCmd: (slot?: number | null) => void;
   closeAddCmd: () => void;
   openEditCmd: (paneId: string) => void;
@@ -576,6 +579,52 @@ export const useStore = create<AppState>((set, get) => {
         runtime: buildRuntime(panes, get().settings.autoRunCommand),
         ui: { ...get().ui, settingsOpen: false },
       });
+    },
+
+    exportData: () => {
+      const s = get();
+      return JSON.stringify(
+        {
+          version: STORE_VERSION,
+          tabs: s.tabs,
+          panes: s.panes,
+          projects: s.projects,
+          activeTabId: s.activeTabId,
+          settings: s.settings,
+          snapshots: s.snapshots,
+        },
+        null,
+        2
+      );
+    },
+
+    importData: (json) => {
+      try {
+        const raw = JSON.parse(json);
+        // Accept both the export shape and the raw plugin-store shape ({ state: {...} }).
+        const p = raw && raw.state ? raw.state : raw;
+        if (!p || !Array.isArray(p.tabs) || !Array.isArray(p.panes)) return false;
+        const settings: Settings = { ...DEFAULT_SETTINGS, ...(p.settings ?? {}) };
+        const panes: Pane[] = p.panes;
+        const tabs: Tab[] = p.tabs;
+        const projects: Project[] = Array.isArray(p.projects) ? p.projects : [];
+        const activeTabId = tabs.some((t) => t.id === p.activeTabId)
+          ? p.activeTabId
+          : tabs[0]?.id ?? '';
+        commit({
+          tabs,
+          panes,
+          projects,
+          activeTabId,
+          settings,
+          snapshots: Array.isArray(p.snapshots) ? p.snapshots : [],
+          runtime: buildRuntime(panes, settings.autoRunCommand),
+          focusedPaneId: null,
+        });
+        return true;
+      } catch {
+        return false;
+      }
     },
 
     openAddCmd: (slot = null) =>

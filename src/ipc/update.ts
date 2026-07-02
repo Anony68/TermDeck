@@ -43,6 +43,7 @@ export async function checkUpdate(repo: string): Promise<UpdateResult> {
   const res = await fetch(`https://api.github.com/repos/${clean}/releases/latest`, {
     headers: { Accept: 'application/vnd.github+json' },
   });
+  if (res.status === 404) throw new Error('Chưa có bản phát hành công khai nào trên repo này');
   if (!res.ok) throw new Error(`GitHub trả về ${res.status}`);
   const data = await res.json();
   const latest = String(data.tag_name ?? '').replace(/^v/i, '');

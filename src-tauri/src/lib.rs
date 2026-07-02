@@ -102,6 +102,16 @@ fn kill_pty(state: State<PtyManager>, pane_id: String) -> Result<(), String> {
     state.kill(pane_id)
 }
 
+#[tauri::command]
+fn save_text(path: String, contents: String) -> Result<(), String> {
+    std::fs::write(&path, contents).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn read_text(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -119,7 +129,9 @@ pub fn run() {
             spawn_pty,
             write_pty,
             resize_pty,
-            kill_pty
+            kill_pty,
+            save_text,
+            read_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
