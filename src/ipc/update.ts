@@ -5,6 +5,8 @@ export interface UpdateResult {
   latest: string;
   hasUpdate: boolean;
   url: string;
+  /** Direct download URL of the Windows installer (.exe), if present. */
+  downloadUrl?: string;
 }
 
 function parseVer(v: string): number[] {
@@ -48,10 +50,23 @@ export async function checkUpdate(repo: string): Promise<UpdateResult> {
   const data = await res.json();
   const latest = String(data.tag_name ?? '').replace(/^v/i, '');
   const url = data.html_url ?? `https://github.com/${clean}/releases/latest`;
-  return { current, latest, hasUpdate: !!latest && isNewer(latest, current), url };
+  const assets: Array<{ name: string; browser_download_url: string }> = Array.isArray(data.assets)
+    ? data.assets
+    : [];
+  const exe =
+    assets.find((a) => /setup\.exe$/i.test(a.name)) ??
+    assets.find((a) => /\.exe$/i.test(a.name)) ??
+    assets.find((a) => /\.msi$/i.test(a.name));
+  return {
+    current,
+    latest,
+    hasUpdate: !!latest && isNewer(latest, current),
+    url,
+    downloadUrl: exe?.browser_download_url,
+  };
 }
 
-/** Open the release page/installer in the default browser. */
+/** Open the release page in the default browser. */
 export async function openUpdateUrl(url: string): Promise<void> {
   if (!IS_TAURI) {
     window.open(url, '_blank');
@@ -59,4 +74,21 @@ export async function openUpdateUrl(url: string): Promise<void> {
   }
   const { openUrl } = await import('@tauri-apps/plugin-opener');
   await openUrl(url);
+}
+
+/** Download the installer .exe and launch it (auto-update). */
+export async function downloadAndRun(url: string): Promise<void> {
+  if (!IS_TAURI) {
+    window.open(url, '_blank');
+    return;
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('download_and_run', { url });
+}
+
+/** Close the app so the installer can replace the running exe. */
+export async function quitApp(): Promise<void> {
+  if (!IS_TAURI) return;
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  await getCurrentWindow().destroy();
 }

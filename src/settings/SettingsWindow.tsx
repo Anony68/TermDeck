@@ -4,7 +4,14 @@ import { SHELL_ORDER, SHELLS } from '../shells';
 import { LAYOUT_ORDER, LAYOUTS } from '../layouts';
 import { PresetIcon } from '../components/PresetIcon';
 import { FONT_ORDER, FONT_LABEL, FONT_PX } from '../fontSizes';
-import { checkUpdate, openUpdateUrl, getAppVersion, type UpdateResult } from '../ipc/update';
+import {
+  checkUpdate,
+  openUpdateUrl,
+  downloadAndRun,
+  quitApp,
+  getAppVersion,
+  type UpdateResult,
+} from '../ipc/update';
 import { pickFolder } from '../ipc/api';
 import { exportBackup, importBackup } from '../ipc/backup';
 import type { Settings } from '../types';
@@ -689,10 +696,32 @@ function UpdateSection() {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<UpdateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     void getAppVersion().then(setVersion);
   }, []);
+
+  const install = async () => {
+    if (!result) return;
+    if (!result.downloadUrl) {
+      void openUpdateUrl(result.url);
+      return;
+    }
+    setInstalling(true);
+    setError(null);
+    setNote('Đang tải bản cài đặt…');
+    try {
+      await downloadAndRun(result.downloadUrl);
+      setNote('Đã tải xong — đang mở trình cài đặt, app sẽ đóng để cập nhật…');
+      setTimeout(() => void quitApp(), 1800);
+    } catch (e) {
+      setInstalling(false);
+      setNote(null);
+      setError('Tải thất bại: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
 
   const check = async () => {
     setChecking(true);
@@ -758,9 +787,14 @@ function UpdateSection() {
             <div style={{ font: '400 11px var(--font-ui)', color: 'var(--text-muted)' }}>
               Bạn đang dùng v{result.current}
             </div>
+            {note && (
+              <div style={{ font: '400 11px var(--font-ui)', color: 'var(--accent)', marginTop: 4 }}>
+                {note}
+              </div>
+            )}
           </div>
-          <button className="accent-btn" onClick={() => void openUpdateUrl(result.url)}>
-            Tải bản mới
+          <button className="accent-btn" onClick={install} disabled={installing}>
+            {installing ? 'Đang tải…' : 'Tải & cài đặt'}
           </button>
         </div>
       )}

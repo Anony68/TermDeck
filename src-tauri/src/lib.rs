@@ -112,6 +112,24 @@ fn read_text(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// Download an installer (following redirects) to the temp dir and launch it.
+#[tauri::command]
+fn download_and_run(url: String) -> Result<String, String> {
+    let tmp = std::env::temp_dir().join("TermDeck-update-setup.exe");
+    let resp = ureq::get(&url)
+        .header("User-Agent", "TermDeck-Updater")
+        .call()
+        .map_err(|e| e.to_string())?;
+    let mut reader = resp.into_body().into_reader();
+    let mut out = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+    std::io::copy(&mut reader, &mut out).map_err(|e| e.to_string())?;
+    drop(out);
+    std::process::Command::new(&tmp)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(tmp.to_string_lossy().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -131,7 +149,8 @@ pub fn run() {
             resize_pty,
             kill_pty,
             save_text,
-            read_text
+            read_text,
+            download_and_run
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
