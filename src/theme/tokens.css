@@ -221,6 +221,39 @@ input {
   background: var(--accent-soft-2);
 }
 
+/* Quick-command chips for Claude Code on the pane's bottom bar. */
+.claude-chip {
+  font: 500 9.5px var(--font-ui);
+  line-height: 13px;
+  color: #d97757;
+  background: rgba(217, 119, 87, 0.08);
+  border: 1px solid rgba(217, 119, 87, 0.35);
+  border-radius: 4px;
+  padding: 1px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.claude-chip:hover {
+  background: rgba(217, 119, 87, 0.2);
+  color: #e8917a;
+}
+
+/* Claude is actively working: the spark pulses. Idle = static icon. */
+.claude-pulse {
+  animation: claude-pulse 1.1s ease-in-out infinite;
+}
+@keyframes claude-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.82);
+  }
+}
+
 .side-item {
   display: flex;
   align-items: center;

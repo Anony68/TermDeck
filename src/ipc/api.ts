@@ -23,14 +23,15 @@ export async function pickFolder(defaultPath?: string): Promise<string | null> {
   return typeof res === 'string' ? res : null;
 }
 
-/** Subscribe to per-cmd CPU/RAM stats emitted by the Rust sampler. */
+/** Subscribe to per-cmd CPU/RAM/Claude stats emitted by the Rust sampler. */
 export async function onPaneStats(
-  cb: (list: Array<{ paneId: string; cpu: number; mem: number }>) => void
+  cb: (list: Array<{ paneId: string; cpu: number; mem: number; claude: boolean }>) => void
 ): Promise<() => void> {
   if (!IS_TAURI) return () => {};
   const { listen } = await import('@tauri-apps/api/event');
-  return listen<Array<{ paneId: string; cpu: number; mem: number }>>('pane://stats', (e) =>
-    cb(e.payload)
+  return listen<Array<{ paneId: string; cpu: number; mem: number; claude: boolean }>>(
+    'pane://stats',
+    (e) => cb(e.payload)
   );
 }
 

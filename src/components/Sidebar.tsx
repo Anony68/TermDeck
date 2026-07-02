@@ -3,12 +3,14 @@ import { useStore } from '../state/store';
 import { SAVED_DND_MIME } from '../dnd';
 import { ShellBadge } from './ShellBadge';
 import { ContextMenu } from './ContextMenu';
+import { ClaudeIcon } from './ClaudeIcon';
 import type { Pane, Project } from '../types';
 
 export function Sidebar() {
   const panes = useStore((s) => s.panes);
   const projects = useStore((s) => s.projects);
   const runtime = useStore((s) => s.runtime);
+  const stats = useStore((s) => s.stats);
   const showPaneInTab = useStore((s) => s.showPaneInTab);
   const stopPane = useStore((s) => s.stopPane);
   const restartPane = useStore((s) => s.restartPane);
@@ -90,6 +92,13 @@ export function Sidebar() {
             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {c.name}
             </span>
+            {running && stats[c.id]?.claude && (
+              <ClaudeIcon
+                size={11}
+                className={stats[c.id]?.busy ? 'claude-pulse' : undefined}
+                title={stats[c.id]?.busy ? 'Claude đang xử lý' : 'Claude đang chờ lệnh'}
+              />
+            )}
             {c.pinned && (
               <span title="Đã ghim" style={{ fontSize: 10 }}>
                 📌

@@ -5,7 +5,9 @@ import { useSlots } from '../state/slots';
 import { SAVED_DND_MIME } from '../dnd';
 import { useNow } from '../useNow';
 import { ShellBadge } from './ShellBadge';
-import { ContextMenu } from './ContextMenu';
+import { ContextMenu, type MenuItem } from './ContextMenu';
+import { ClaudeIcon } from './ClaudeIcon';
+import { writePty } from '../ipc/pty';
 
 function fmtUptime(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -39,6 +41,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(pane.name);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [claudeMenu, setClaudeMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Stable ref so the terminal only re-parents on mount/unmount, not every render.
   const slotRef = useCallback(
@@ -53,6 +56,60 @@ export function Pane({ pane }: { pane: PaneModel }) {
   };
 
   const status = runtime?.status ?? 'running';
+  const claudeRunning = status === 'running' && !!stat?.claude;
+  const claudeBusy = claudeRunning && !!stat?.busy;
+
+  /** Type a command into the pane's PTY, then press Enter after a short pause
+   *  (the pause lets Claude's TUI settle before the submit keystroke). */
+  const typeCommand = (text: string) => {
+    setFocusedPane(pane.id);
+    writePty(pane.id, text);
+    window.setTimeout(() => writePty(pane.id, '\r'), 160);
+  };
+
+  const claudeItems: MenuItem[] = claudeRunning
+    ? [
+        { label: 'Điều khiển từ xa (/remote-control)', onClick: () => typeCommand('/remote-control') },
+        { label: 'Tiếp tục phiên cũ (/resume)', onClick: () => typeCommand('/resume') },
+        { label: 'Đổi model (/model)', onClick: () => typeCommand('/model') },
+        { label: 'Nén hội thoại (/compact)', onClick: () => typeCommand('/compact') },
+        { label: 'Xóa hội thoại (/clear)', onClick: () => typeCommand('/clear') },
+        { label: 'Xem chi phí (/cost)', onClick: () => typeCommand('/cost') },
+        { label: '', separator: true },
+        { label: 'Ngắt thao tác (Esc)', onClick: () => writePty(pane.id, '\x1b') },
+        {
+          label: 'Thoát Claude (Ctrl+C ×2)',
+          danger: true,
+          onClick: () => {
+            writePty(pane.id, '\x03');
+            window.setTimeout(() => writePty(pane.id, '\x03'), 250);
+          },
+        },
+      ]
+    : [
+        { label: 'Chạy Claude', disabled: status !== 'running', onClick: () => typeCommand('claude') },
+        {
+          label: 'Tiếp tục phiên trước (claude -c)',
+          disabled: status !== 'running',
+          onClick: () => typeCommand('claude -c'),
+        },
+        {
+          label: 'Chọn phiên để mở (claude -r)',
+          disabled: status !== 'running',
+          onClick: () => typeCommand('claude -r'),
+        },
+        {
+          label: 'Chạy bỏ qua xác nhận (nguy hiểm)',
+          disabled: status !== 'running',
+          onClick: () => typeCommand('claude --dangerously-skip-permissions'),
+        },
+        { label: '', separator: true },
+        {
+          label: 'Cập nhật Claude (claude update)',
+          disabled: status !== 'running',
+          onClick: () => typeCommand('claude update'),
+        },
+      ];
 
   const commitName = () => {
     setEditing(false);
@@ -125,6 +182,13 @@ export function Pane({ pane }: { pane: PaneModel }) {
             {pane.name}
           </span>
         )}
+        {claudeRunning && (
+          <ClaudeIcon
+            size={13}
+            className={claudeBusy ? 'claude-pulse' : undefined}
+            title={claudeBusy ? 'Claude Code — đang xử lý' : 'Claude Code — đang chờ lệnh'}
+          />
+        )}
         <span
           style={{
             font: '400 10.5px var(--font-mono)',
@@ -153,6 +217,17 @@ export function Pane({ pane }: { pane: PaneModel }) {
             boxShadow: status === 'running' ? '0 0 6px rgba(45,212,167,0.8)' : 'none',
           }}
         />
+        <span
+          className="pane-ctl"
+          title={claudeRunning ? 'Lệnh nhanh Claude Code' : 'Claude Code — chạy trong terminal này'}
+          onClick={(e) => {
+            e.stopPropagation();
+            setFocusedPane(pane.id);
+            setClaudeMenu({ x: e.clientX, y: e.clientY });
+          }}
+        >
+          <ClaudeIcon size={13} color={claudeRunning ? undefined : 'var(--text-muted)'} />
+        </span>
         <span
           className="pane-ctl"
           title="Mở lại (restart)"
@@ -205,7 +280,57 @@ export function Pane({ pane }: { pane: PaneModel }) {
           <span title="Thời gian chạy">⏱ {fmtUptime(now - (runtime?.startedAt ?? now))}</span>
           <span title="CPU">CPU {stat ? stat.cpu.toFixed(1) : '0.0'}%</span>
           <span title="RAM">RAM {stat ? fmtMem(stat.mem) : '—'}</span>
+          {claudeRunning && (
+            <span
+              title={claudeBusy ? 'Claude đang xử lý' : 'Claude đang chờ lệnh'}
+              style={{ color: '#d97757', display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <ClaudeIcon size={10} className={claudeBusy ? 'claude-pulse' : undefined} />
+              {claudeBusy ? 'đang xử lý…' : 'sẵn sàng'}
+            </span>
+          )}
+          {claudeRunning && (
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
+              <button
+                className="claude-chip"
+                title="/remote-control — điều khiển phiên này từ claude.ai / điện thoại"
+                onClick={() => typeCommand('/remote-control')}
+              >
+                Remote
+              </button>
+              <button
+                className="claude-chip"
+                title="/resume — tiếp tục phiên cũ"
+                onClick={() => typeCommand('/resume')}
+              >
+                Resume
+              </button>
+              <button
+                className="claude-chip"
+                title="/compact — nén hội thoại để tiết kiệm context"
+                onClick={() => typeCommand('/compact')}
+              >
+                Compact
+              </button>
+              <button
+                className="claude-chip"
+                title="Gửi phím Esc — ngắt thao tác Claude đang chạy"
+                onClick={() => writePty(pane.id, '\x1b')}
+              >
+                Esc
+              </button>
+            </span>
+          )}
         </div>
+      )}
+
+      {claudeMenu && (
+        <ContextMenu
+          x={claudeMenu.x}
+          y={claudeMenu.y}
+          onClose={() => setClaudeMenu(null)}
+          items={claudeItems}
+        />
       )}
 
       {menu && (

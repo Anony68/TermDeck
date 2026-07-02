@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { spawnPty, writePty, resizePty, killPty } from '../ipc/pty';
 import { useStore, findPane } from '../state/store';
+import { markPaneActivity, clearPaneActivity } from '../state/activity';
 import { useSlots } from '../state/slots';
 import { getTerminalHolder } from '../terminalHolder';
 import { IS_TAURI } from '../ipc/env';
@@ -60,16 +61,32 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
   paneRef.current = pane;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
-  // Right-click inside the terminal opens a copy/paste menu.
+  // Right-click: copy the selection if there is one, otherwise paste — like
+  // Windows Terminal. Shift+right-click still opens the full context menu.
   useEffect(() => {
     const onCtx = (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      setMenu({ x: e.clientX, y: e.clientY });
+      if (e.shiftKey) {
+        setMenu({ x: e.clientX, y: e.clientY });
+        return;
+      }
+      const term = termRef.current;
+      if (term?.hasSelection()) {
+        void navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
+        term.clearSelection();
+      } else {
+        void navigator.clipboard
+          ?.readText()
+          .then((txt) => {
+            if (txt) writePty(paneId, txt);
+          })
+          .catch(() => {});
+      }
     };
     host.addEventListener('contextmenu', onCtx);
     return () => host.removeEventListener('contextmenu', onCtx);
-  }, [host]);
+  }, [host, paneId]);
 
   const refit = () => {
     const term = termRef.current;
@@ -138,7 +155,10 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
       rows: term.rows || 24,
       command: runCmd ? p.presetCommand : undefined,
       shellPath: useStore.getState().settings.shellPaths[p.shell],
-      onData: (bytes) => term.write(bytes),
+      onData: (bytes) => {
+        markPaneActivity(paneId);
+        term.write(bytes);
+      },
       onExit: (code) => {
         if (!disposed) setPaneStatus(paneId, 'exited', code);
       },
@@ -154,6 +174,7 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
       onData.dispose();
       cleanupResize();
       killPty(paneId);
+      clearPaneActivity(paneId);
       term.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

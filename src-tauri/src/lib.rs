@@ -14,6 +14,24 @@ struct PaneStat {
     pane_id: String,
     cpu: f32,
     mem: u64,
+    /// True when a Claude Code process is running inside this pane's subtree.
+    claude: bool,
+}
+
+/// Heuristic: the native installer runs as `claude.exe`; npm installs run it as
+/// `node …\@anthropic-ai\claude-code\cli.js` (via a `claude.cmd`/`claude.ps1` shim).
+fn is_claude_process(p: &sysinfo::Process) -> bool {
+    let name = p.name().to_string_lossy().to_lowercase();
+    if name.contains("claude") {
+        return true;
+    }
+    if name.starts_with("node") || name.starts_with("bun") {
+        return p
+            .cmd()
+            .iter()
+            .any(|a| a.to_string_lossy().to_lowercase().contains("claude"));
+    }
+    false
 }
 
 /// Background thread that samples CPU% + memory (summed over each cmd's process
@@ -43,17 +61,21 @@ fn start_stats(handle: AppHandle, pids: Arc<Mutex<HashMap<String, u32>>>) {
                 .map(|(pane, pid)| {
                     let mut cpu = 0.0f32;
                     let mut mem = 0u64;
+                    let mut claude = false;
                     let mut stack = vec![Pid::from_u32(*pid)];
                     while let Some(p) = stack.pop() {
                         if let Some(proc_) = sys.process(p) {
                             cpu += proc_.cpu_usage();
                             mem += proc_.memory();
+                            if !claude && is_claude_process(proc_) {
+                                claude = true;
+                            }
                         }
                         if let Some(ch) = children.get(&p) {
                             stack.extend(ch.iter().copied());
                         }
                     }
-                    PaneStat { pane_id: pane.clone(), cpu, mem }
+                    PaneStat { pane_id: pane.clone(), cpu, mem, claude }
                 })
                 .collect();
 

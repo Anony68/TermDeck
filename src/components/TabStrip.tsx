@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { useStore } from '../state/store';
+import { useStore, displayItems } from '../state/store';
 import { ContextMenu } from './ContextMenu';
+import { ClaudeIcon } from './ClaudeIcon';
 import { TAB_DND_MIME } from '../dnd';
 
 export function TabStrip() {
   const tabs = useStore((s) => s.tabs);
+  const panes = useStore((s) => s.panes);
+  const stats = useStore((s) => s.stats);
   const activeTabId = useStore((s) => s.activeTabId);
   const setActiveTab = useStore((s) => s.setActiveTab);
   const addTab = useStore((s) => s.addTab);
@@ -37,6 +40,9 @@ export function TabStrip() {
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2 }}>
         {ordered.map((t) => {
           const active = t.id === activeTabId;
+          const shown = displayItems(t, panes);
+          const hasClaude = shown.some((i) => stats[i.paneId]?.claude);
+          const claudeBusy = shown.some((i) => stats[i.paneId]?.claude && stats[i.paneId]?.busy);
           if (editingId === t.id) {
             return (
               <input
@@ -101,6 +107,13 @@ export function TabStrip() {
                     style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)' }}
                   />
                 )
+              )}
+              {hasClaude && (
+                <ClaudeIcon
+                  size={11}
+                  className={claudeBusy ? 'claude-pulse' : undefined}
+                  title={claudeBusy ? 'Claude đang xử lý trong tab này' : 'Tab có Claude Code (đang chờ)'}
+                />
               )}
               {t.name}
             </div>

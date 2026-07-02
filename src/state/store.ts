@@ -15,6 +15,7 @@ import type {
 import { LAYOUTS, fitLayout } from '../layouts';
 import { loadPersisted, savePersisted } from '../ipc/persist';
 import { killPty } from '../ipc/pty';
+import { isPaneActive } from './activity';
 
 const uid = () =>
   Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
@@ -47,6 +48,10 @@ interface RuntimeInfo {
 export interface PaneStat {
   cpu: number;
   mem: number;
+  /** True when Claude Code is running inside this pane. */
+  claude: boolean;
+  /** True when Claude is actively working (recent PTY output), false = idle. */
+  busy: boolean;
 }
 
 export interface NewPaneInput {
@@ -84,7 +89,7 @@ interface AppState {
 
   hydrate: () => Promise<void>;
   setShells: (s: ShellInfo[]) => void;
-  setStats: (list: Array<{ paneId: string; cpu: number; mem: number }>) => void;
+  setStats: (list: Array<{ paneId: string; cpu: number; mem: number; claude: boolean }>) => void;
 
   addTab: () => void;
   closeTab: (id: string) => void;
@@ -287,8 +292,15 @@ export const useStore = create<AppState>((set, get) => {
     setShells: (shells) => set({ shells }),
 
     setStats: (list) => {
+      const now = Date.now();
       const next: Record<string, PaneStat> = {};
-      for (const s of list) next[s.paneId] = { cpu: s.cpu, mem: s.mem };
+      for (const s of list)
+        next[s.paneId] = {
+          cpu: s.cpu,
+          mem: s.mem,
+          claude: !!s.claude,
+          busy: !!s.claude && isPaneActive(s.paneId, now),
+        };
       set({ stats: next });
     },
 
