@@ -18,6 +18,8 @@
     "core:window:allow-close",
     "core:window:allow-destroy",
     "dialog:default",
-    "store:default"
+    "store:default",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text"
   ]
 }

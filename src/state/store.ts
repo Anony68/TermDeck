@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type {
   LayoutPreset,
   Pane,
+  PaneKind,
   PaneStatus,
   PersistedState,
   Project,
@@ -9,12 +10,14 @@ import type {
   ShellInfo,
   ShellKind,
   Snapshot,
+  SshConfig,
   Tab,
   TabItem,
 } from '../types';
 import { LAYOUTS, fitLayout } from '../layouts';
 import { loadPersisted, savePersisted } from '../ipc/persist';
-import { killPty } from '../ipc/pty';
+import { killSession } from '../ipc/session';
+import { secretDelete } from '../ipc/ssh';
 import { isPaneActive } from './activity';
 
 const uid = () =>
@@ -62,6 +65,10 @@ export interface NewPaneInput {
   autoStart: boolean;
   projectId?: string;
   slot?: number;
+  kind?: PaneKind;
+  ssh?: SshConfig;
+  /** Pre-generated id, so the caller can attach a secret before the pane mounts. */
+  id?: string;
 }
 
 interface AppState {
@@ -99,7 +106,8 @@ interface AppState {
   reorderTab: (dragId: string, targetId: string) => void;
   togglePinTab: (id: string) => void;
 
-  addPane: (input: NewPaneInput) => void;
+  /** Returns the new pane's id (so callers can attach secrets to it). */
+  addPane: (input: NewPaneInput) => string;
   /** Show an existing cmd in the active tab (restarts it if stopped). */
   showPaneInTab: (paneId: string, slot?: number) => void;
   /** Hide a cmd from the active tab (process keeps running). */
@@ -112,6 +120,8 @@ interface AppState {
   removePane: (paneId: string) => void;
   renamePane: (paneId: string, name: string) => void;
   updatePane: (paneId: string, patch: Partial<Pane>) => void;
+  /** Persist a browser pane's current directory (per side) so it restores on reopen. */
+  setBrowserPath: (paneId: string, side: 'local' | 'remote', path: string) => void;
   restartPane: (paneId: string) => void;
   togglePinPane: (paneId: string) => void;
   setPaneStatus: (paneId: string, status: PaneStatus, exitCode?: number) => void;
@@ -345,7 +355,7 @@ export const useStore = create<AppState>((set, get) => {
     addPane: (input) => {
       const { panes, tabs, activeTabId, runtime } = get();
       const tab = tabs.find((t) => t.id === activeTabId);
-      if (!tab) return;
+      if (!tab) return '';
       const shown = displayItems(tab, panes);
       const layout = fitLayout(shown.length + 1, tab.layout);
       let slot = input.slot ?? -1;
@@ -355,13 +365,15 @@ export const useStore = create<AppState>((set, get) => {
       if (slot < 0) slot = shown.length;
 
       const pane: Pane = {
-        id: uid(),
+        id: input.id || uid(),
         name: input.name.trim() || 'Terminal',
         shell: input.shell,
         cwd: input.cwd,
         presetCommand: input.presetCommand?.trim() || undefined,
         autoStart: input.autoStart,
         projectId: input.projectId,
+        kind: input.kind ?? 'shell',
+        ssh: input.ssh,
       };
       commit({
         panes: [...panes, pane],
@@ -379,6 +391,7 @@ export const useStore = create<AppState>((set, get) => {
         },
         focusedPaneId: pane.id,
       });
+      return pane.id;
     },
 
     showPaneInTab: (paneId, slot) => {
@@ -426,7 +439,7 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     stopPane: (paneId) => {
-      killPty(paneId);
+      killSession(paneId);
       const { runtime } = get();
       const prev =
         runtime[paneId] ?? { nonce: 0, runOnSpawn: false, status: 'running' as PaneStatus, startedAt: Date.now() };
@@ -434,7 +447,8 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     removePane: (paneId) => {
-      killPty(paneId);
+      killSession(paneId);
+      secretDelete(paneId);
       const { panes, tabs, runtime, focusedPaneId } = get();
       const rt = { ...runtime };
       delete rt[paneId];
@@ -449,6 +463,15 @@ export const useStore = create<AppState>((set, get) => {
     renamePane: (paneId, name) =>
       commit({ panes: get().panes.map((p) => (p.id === paneId ? { ...p, name } : p)) }),
 
+    setBrowserPath: (paneId, side, path) => {
+      const field = side === 'local' ? 'browserLocalPath' : 'browserRemotePath';
+      const cur = get().panes.find((p) => p.id === paneId);
+      if (!cur || cur[field] === path) return;
+      commit({
+        panes: get().panes.map((p) => (p.id === paneId ? { ...p, [field]: path } : p)),
+      });
+    },
+
     updatePane: (paneId, patch) => {
       const { panes, runtime } = get();
       let needRespawn = false;
@@ -457,7 +480,9 @@ export const useStore = create<AppState>((set, get) => {
         if (
           (patch.shell !== undefined && patch.shell !== p.shell) ||
           (patch.cwd !== undefined && patch.cwd !== p.cwd) ||
-          (patch.presetCommand !== undefined && patch.presetCommand !== p.presetCommand)
+          (patch.presetCommand !== undefined && patch.presetCommand !== p.presetCommand) ||
+          (patch.kind !== undefined && patch.kind !== (p.kind ?? 'shell')) ||
+          (patch.ssh !== undefined && JSON.stringify(patch.ssh) !== JSON.stringify(p.ssh))
         ) {
           needRespawn = true;
         }

@@ -254,6 +254,162 @@ input {
   }
 }
 
+/* ---- File browser (SFTP / local dual-pane) ---- */
+.fb-tool {
+  min-width: 22px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  border: 1px solid var(--border-3);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.fb-tool:hover {
+  background: var(--border-2);
+  color: var(--text);
+}
+.fb-path {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  font: 400 11px var(--font-mono);
+  color: var(--text-2);
+  cursor: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fb-path:hover {
+  border-color: var(--border-3);
+  color: var(--text);
+}
+.fb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  font: 400 11.5px var(--font-ui);
+  white-space: nowrap;
+}
+.fb-head {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-2);
+  color: var(--text-muted);
+  font: 600 10px var(--font-ui);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  position: sticky;
+  top: 0;
+}
+.fb-item {
+  color: var(--text);
+  cursor: default;
+  border-bottom: 1px solid transparent;
+}
+.fb-item:hover {
+  background: var(--surface-2);
+}
+.fb-item.sel {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.fb-c-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fb-c-size {
+  width: 78px;
+  text-align: right;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+.fb-c-date {
+  width: 118px;
+  text-align: right;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.fb-ico {
+  font-size: 12px;
+  flex: none;
+}
+.fb-transfer {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  font: 600 11px var(--font-ui);
+  cursor: pointer;
+}
+.fb-transfer:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.fb-transfer:disabled {
+  opacity: 0.4;
+  cursor: default;
+  border-color: var(--border-3);
+  background: transparent;
+}
+.fb-cancel {
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--danger);
+  background: transparent;
+  color: var(--danger);
+  font: 600 10px var(--font-ui);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fb-cancel:hover {
+  background: var(--danger-soft);
+}
+
+/* SYNC button in the panel footer, beside the transfer button. Styled like
+   fb-transfer but outline-only so it reads as a distinct, heavier action. */
+.fb-sync-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--warn);
+  background: transparent;
+  color: var(--warn);
+  font: 600 11px var(--font-ui);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fb-sync-btn:hover {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+}
+
+/* Marquee (rubber-band) selection rectangle in the file list. */
+.fb-marquee {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: var(--accent-soft);
+  border-top: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+  pointer-events: none;
+  z-index: 2;
+}
+
 .side-item {
   display: flex;
   align-items: center;

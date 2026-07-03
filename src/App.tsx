@@ -48,6 +48,18 @@ export default function App() {
     return () => unlisten?.();
   }, []);
 
+  // Block webview reload (F5 / Ctrl+R / Ctrl+Shift+R) — a reload would kill every
+  // running terminal. F5 is repurposed to reload the focused file browser panel.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, []);
+
   // Global keyboard shortcuts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

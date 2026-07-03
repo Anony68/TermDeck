@@ -2,6 +2,20 @@
 // and plugin-store read/write.
 
 export type ShellKind = 'powershell' | 'cmd' | 'git-bash' | 'wsl';
+/** What a pane hosts: a local shell, an SSH terminal, or a file browser. */
+export type PaneKind = 'shell' | 'ssh' | 'browser';
+
+/** SSH connection settings (secret lives in the OS credential store, not here). */
+export interface SshConfig {
+  host: string;
+  port: number;
+  user: string;
+  auth: 'password' | 'key';
+  /** Path to the private key file when auth === 'key'. */
+  keyPath?: string;
+  /** Remote start directory (SSH terminal: cd after login; browser: remote panel root). */
+  remotePath?: string;
+}
 export type LayoutPreset =
   | 'single'
   | 'cols2'
@@ -27,6 +41,13 @@ export interface Pane {
   pinned?: boolean;
   /** Optional project this terminal belongs to (for sidebar grouping). */
   projectId?: string;
+  /** Pane type — absent means 'shell' (backward compatible with old saves). */
+  kind?: PaneKind;
+  /** SSH settings for kind 'ssh', or the remote side of a 'browser' pane. */
+  ssh?: SshConfig;
+  /** Last-visited directories of a 'browser' pane, restored on reopen. */
+  browserLocalPath?: string;
+  browserRemotePath?: string;
 }
 
 /** A saved project (a working folder) used to group and quick-pick terminals. */

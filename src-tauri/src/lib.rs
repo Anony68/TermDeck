@@ -1,7 +1,9 @@
 mod pty;
 mod shells;
+mod ssh;
 
 use pty::{PtyEvent, PtyManager};
+use ssh::SshManager;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -158,7 +160,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(PtyManager::new())
+        .manage(SshManager::new())
         .setup(|app| {
             let pids = app.state::<PtyManager>().pids();
             start_stats(app.handle().clone(), pids);
@@ -172,7 +176,26 @@ pub fn run() {
             kill_pty,
             save_text,
             read_text,
-            download_and_run
+            download_and_run,
+            ssh::spawn_ssh,
+            ssh::write_ssh,
+            ssh::resize_ssh,
+            ssh::kill_ssh,
+            ssh::secret_set,
+            ssh::secret_delete,
+            ssh::sftp_connect,
+            ssh::sftp_disconnect,
+            ssh::sftp_list,
+            ssh::sftp_mkdir,
+            ssh::sftp_rename,
+            ssh::sftp_remove,
+            ssh::sftp_upload,
+            ssh::sftp_download,
+            ssh::fs_list,
+            ssh::fs_mkdir,
+            ssh::fs_rename,
+            ssh::fs_remove,
+            ssh::fs_home
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

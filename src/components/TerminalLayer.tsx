@@ -7,7 +7,10 @@ import { KeepAliveTerminal } from './KeepAliveTerminal';
  * ids changes (not on every state update).
  */
 export function TerminalLayer() {
-  const idsKey = useStore((s) => s.panes.map((p) => p.id).join('|'));
+  // Browser panes have no terminal/PTY — they render their own FileBrowser body.
+  const idsKey = useStore((s) =>
+    s.panes.filter((p) => (p.kind ?? 'shell') !== 'browser').map((p) => p.id).join('|')
+  );
   const ids = idsKey ? idsKey.split('|') : [];
   return (
     <>

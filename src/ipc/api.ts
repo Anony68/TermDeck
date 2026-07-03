@@ -23,6 +23,14 @@ export async function pickFolder(defaultPath?: string): Promise<string | null> {
   return typeof res === 'string' ? res : null;
 }
 
+/** Native file picker (e.g. for choosing an SSH private key). */
+export async function pickFile(defaultPath?: string): Promise<string | null> {
+  if (!IS_TAURI) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const res = await open({ directory: false, multiple: false, defaultPath });
+  return typeof res === 'string' ? res : null;
+}
+
 /** Subscribe to per-cmd CPU/RAM/Claude stats emitted by the Rust sampler. */
 export async function onPaneStats(
   cb: (list: Array<{ paneId: string; cpu: number; mem: number; claude: boolean }>) => void

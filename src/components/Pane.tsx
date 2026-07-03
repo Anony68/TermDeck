@@ -4,9 +4,10 @@ import { useStore } from '../state/store';
 import { useSlots } from '../state/slots';
 import { SAVED_DND_MIME } from '../dnd';
 import { useNow } from '../useNow';
-import { ShellBadge } from './ShellBadge';
+import { PaneBadge } from './ShellBadge';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { ClaudeIcon } from './ClaudeIcon';
+import { FileBrowser } from './FileBrowser';
 import { writePty } from '../ipc/pty';
 
 function fmtUptime(ms: number): string {
@@ -56,6 +57,8 @@ export function Pane({ pane }: { pane: PaneModel }) {
   };
 
   const status = runtime?.status ?? 'running';
+  const kind = pane.kind ?? 'shell';
+  const isBrowser = kind === 'browser';
   const claudeRunning = status === 'running' && !!stat?.claude;
   const claudeBusy = claudeRunning && !!stat?.busy;
 
@@ -141,7 +144,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
           cursor: 'grab',
         }}
       >
-        <ShellBadge shell={pane.shell} size={20} />
+        <PaneBadge pane={pane} size={20} />
         {editing ? (
           <input
             autoFocus
@@ -199,38 +202,44 @@ export function Pane({ pane }: { pane: PaneModel }) {
             textOverflow: 'ellipsis',
           }}
         >
-          {pane.cwd || '(mặc định)'}
+          {pane.ssh
+            ? `${pane.ssh.user}@${pane.ssh.host}:${pane.ssh.port}`
+            : pane.cwd || '(mặc định)'}
         </span>
         {pane.pinned && (
           <span title="Đã ghim — hiện ở mọi tab" style={{ fontSize: 11, lineHeight: 1 }}>
             📌
           </span>
         )}
-        <span
-          title={status === 'running' ? 'Đang chạy' : `Đã kết thúc (exit ${runtime?.exitCode ?? 0})`}
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: '50%',
-            flex: 'none',
-            background: status === 'running' ? 'var(--accent)' : 'var(--text-muted)',
-            boxShadow: status === 'running' ? '0 0 6px rgba(45,212,167,0.8)' : 'none',
-          }}
-        />
+        {!isBrowser && (
+          <span
+            title={status === 'running' ? 'Đang chạy' : `Đã kết thúc (exit ${runtime?.exitCode ?? 0})`}
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              flex: 'none',
+              background: status === 'running' ? 'var(--accent)' : 'var(--text-muted)',
+              boxShadow: status === 'running' ? '0 0 6px rgba(45,212,167,0.8)' : 'none',
+            }}
+          />
+        )}
+        {!isBrowser && (
+          <span
+            className="pane-ctl"
+            title={claudeRunning ? 'Lệnh nhanh Claude Code' : 'Claude Code — chạy trong terminal này'}
+            onClick={(e) => {
+              e.stopPropagation();
+              setFocusedPane(pane.id);
+              setClaudeMenu({ x: e.clientX, y: e.clientY });
+            }}
+          >
+            <ClaudeIcon size={13} color={claudeRunning ? undefined : 'var(--text-muted)'} />
+          </span>
+        )}
         <span
           className="pane-ctl"
-          title={claudeRunning ? 'Lệnh nhanh Claude Code' : 'Claude Code — chạy trong terminal này'}
-          onClick={(e) => {
-            e.stopPropagation();
-            setFocusedPane(pane.id);
-            setClaudeMenu({ x: e.clientX, y: e.clientY });
-          }}
-        >
-          <ClaudeIcon size={13} color={claudeRunning ? undefined : 'var(--text-muted)'} />
-        </span>
-        <span
-          className="pane-ctl"
-          title="Mở lại (restart)"
+          title={isBrowser ? 'Kết nối lại' : 'Mở lại (restart)'}
           onClick={() => restartPane(pane.id)}
         >
           ⟳
@@ -245,7 +254,9 @@ export function Pane({ pane }: { pane: PaneModel }) {
         </span>
       </div>
 
-      {status === 'exited' ? (
+      {isBrowser ? (
+        <FileBrowser pane={pane} />
+      ) : status === 'exited' ? (
         <div style={{ flex: 1, display: 'grid', placeItems: 'center', minHeight: 0 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
             <div style={{ font: '400 11.5px var(--font-mono)', color: 'var(--text-muted)' }}>
@@ -260,7 +271,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
         <div ref={slotRef} style={{ flex: 1, minHeight: 0, minWidth: 0 }} />
       )}
 
-      {status === 'running' && (
+      {!isBrowser && status === 'running' && (
         <div
           style={{
             display: 'flex',

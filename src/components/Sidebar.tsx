@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../state/store';
 import { SAVED_DND_MIME } from '../dnd';
-import { ShellBadge } from './ShellBadge';
+import { PaneBadge } from './ShellBadge';
 import { ContextMenu } from './ContextMenu';
 import { ClaudeIcon } from './ClaudeIcon';
 import type { Pane, Project } from '../types';
@@ -78,7 +78,7 @@ export function Sidebar() {
             boxShadow: running ? '0 0 6px rgba(45,212,167,0.8)' : 'none',
           }}
         />
-        <ShellBadge shell={c.shell} size={22} />
+        <PaneBadge pane={c} size={22} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div
             style={{

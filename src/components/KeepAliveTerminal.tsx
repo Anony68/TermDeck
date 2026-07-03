@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { spawnPty, writePty, resizePty, killPty } from '../ipc/pty';
+import { spawnPty } from '../ipc/pty';
+import { spawnSsh } from '../ipc/ssh';
+import { writeSession, resizeSession, killSession, paneKind } from '../ipc/session';
+import { copyText, pasteText } from '../ipc/clipboard';
 import { useStore, findPane } from '../state/store';
 import { markPaneActivity, clearPaneActivity } from '../state/activity';
 import { useSlots } from '../state/slots';
@@ -73,15 +76,13 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
       }
       const term = termRef.current;
       if (term?.hasSelection()) {
-        void navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
-        term.clearSelection();
+        const sel = term.getSelection();
+        void copyText(sel).then(() => term.clearSelection());
       } else {
-        void navigator.clipboard
-          ?.readText()
-          .then((txt) => {
-            if (txt) writePty(paneId, txt);
-          })
-          .catch(() => {});
+        void pasteText().then((txt) => {
+          const cur = paneRef.current;
+          if (txt && cur) writeSession(cur, txt);
+        });
       }
     };
     host.addEventListener('contextmenu', onCtx);
@@ -93,7 +94,8 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
     if (!term) return;
     try {
       fitRef.current?.fit();
-      if (IS_TAURI) resizePty(paneId, term.cols, term.rows);
+      const p = paneRef.current;
+      if (IS_TAURI && p) resizeSession(p, term.cols, term.rows);
     } catch {
       /* not laid out yet */
     }
@@ -121,6 +123,28 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
     term.loadAddon(new WebLinksAddon());
     term.open(host);
 
+    // Windows Terminal-style Ctrl+C / Ctrl+V: Ctrl+C copies when there's a
+    // selection, otherwise falls through to the shell (SIGINT); Ctrl+V pastes.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== 'keydown' || !e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return true;
+      const key = e.key.toLowerCase();
+      if (key === 'c' && term.hasSelection()) {
+        e.preventDefault();
+        const sel = term.getSelection();
+        void copyText(sel).then(() => term.clearSelection());
+        return false; // consumed as copy — don't send ^C
+      }
+      if (key === 'v') {
+        e.preventDefault();
+        void pasteText().then((txt) => {
+          const cur = paneRef.current;
+          if (txt && cur) writeSession(cur, txt);
+        });
+        return false; // consumed as paste
+      }
+      return true; // Ctrl+C with no selection (and everything else) → shell
+    });
+
     let rafId = 0;
     const scheduleFit = () => {
       cancelAnimationFrame(rafId);
@@ -147,33 +171,57 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
 
     let disposed = false;
     const runCmd = consumeRunOnSpawn(paneId);
-    spawnPty({
-      paneId,
-      shell: p.shell,
-      cwd: p.cwd,
-      cols: term.cols || 80,
-      rows: term.rows || 24,
-      command: runCmd ? p.presetCommand : undefined,
-      shellPath: useStore.getState().settings.shellPaths[p.shell],
-      onData: (bytes) => {
+    const common = {
+      onData: (bytes: Uint8Array) => {
         markPaneActivity(paneId);
         term.write(bytes);
       },
-      onExit: (code) => {
+      onExit: (code: number) => {
         if (!disposed) setPaneStatus(paneId, 'exited', code);
       },
-    }).catch((e) => {
-      term.writeln(`\r\n\x1b[31mLỗi mở shell: ${e}\x1b[0m`);
+    };
+    const spawning =
+      paneKind(p) === 'ssh' && p.ssh
+        ? spawnSsh({
+            paneId,
+            cfg: p.ssh,
+            cols: term.cols || 80,
+            rows: term.rows || 24,
+            // Land in the configured remote directory, then optionally run the preset.
+            command:
+              [
+                p.ssh.remotePath?.trim() ? `cd "${p.ssh.remotePath.trim()}"` : '',
+                runCmd && p.presetCommand ? p.presetCommand : '',
+              ]
+                .filter(Boolean)
+                .join(' && ') || undefined,
+            ...common,
+          })
+        : spawnPty({
+            paneId,
+            shell: p.shell,
+            cwd: p.cwd,
+            cols: term.cols || 80,
+            rows: term.rows || 24,
+            command: runCmd ? p.presetCommand : undefined,
+            shellPath: useStore.getState().settings.shellPaths[p.shell],
+            ...common,
+          });
+    spawning.catch((e) => {
+      term.writeln(`\r\n\x1b[31mLỗi kết nối: ${e}\x1b[0m`);
       setPaneStatus(paneId, 'exited', -1);
     });
 
-    const onData = term.onData((d) => writePty(paneId, d));
+    const onData = term.onData((d) => {
+      const cur = paneRef.current;
+      if (cur) writeSession(cur, d);
+    });
 
     return () => {
       disposed = true;
       onData.dispose();
       cleanupResize();
-      killPty(paneId);
+      killSession(paneId);
       clearPaneActivity(paneId);
       term.dispose();
     };
@@ -217,16 +265,16 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
           disabled: !termRef.current?.hasSelection(),
           onClick: () => {
             const t = termRef.current;
-            if (t?.hasSelection()) void navigator.clipboard?.writeText(t.getSelection()).catch(() => {});
+            if (t?.hasSelection()) void copyText(t.getSelection());
           },
         },
         {
           label: 'Dán',
           onClick: () =>
-            void navigator.clipboard
-              ?.readText()
-              .then((txt) => writePty(paneId, txt))
-              .catch(() => {}),
+            void pasteText().then((txt) => {
+              const cur = paneRef.current;
+              if (txt && cur) writeSession(cur, txt);
+            }),
         },
         { label: 'Chọn tất cả', onClick: () => termRef.current?.selectAll() },
         { label: '', separator: true },
