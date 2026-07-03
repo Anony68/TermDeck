@@ -1,6 +1,6 @@
 [package]
 name = "xcmd"
-version = "0.1.2"
+version = "0.1.3"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -26,5 +26,15 @@ tauri-plugin-dialog = "2.7.1"
 tauri-plugin-store = "2.4.3"
 sysinfo = "0.39.5"
 tauri-plugin-opener = "2.5.4"
+tauri-plugin-clipboard-manager = "2"
 ureq = "3.3.0"
+base64 = "0.22"
+keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
+
+# ssh2 uses WinCNG on Windows (no OpenSSL); elsewhere build a vendored OpenSSL.
+[target.'cfg(windows)'.dependencies]
+ssh2 = "0.9"
+
+[target.'cfg(not(windows))'.dependencies]
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 
