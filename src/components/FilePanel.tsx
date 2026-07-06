@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { FileEntry } from '../ipc/ssh';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { joinPath } from './pathUtils';
+import { useT } from '../i18n';
 
 export interface FsBackend {
   list: (path: string) => Promise<FileEntry[]>;
@@ -71,6 +72,7 @@ export function FilePanel({
   const [pathDraft, setPathDraft] = useState(path);
   const [confirmDel, setConfirmDel] = useState<FileEntry[] | null>(null);
   const [marquee, setMarquee] = useState<{ top: number; height: number } | null>(null);
+  const t = useT();
 
   const listRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef(-1); // last anchor index (for shift/keyboard range select)
@@ -263,17 +265,17 @@ export function FilePanel({
   const selectedEntries = () => entries.filter((e) => selected.has(e.name));
 
   const doMkdir = async () => {
-    const name = window.prompt('Tên thư mục mới:');
+    const name = window.prompt(t('fb.promptNewFolder'));
     if (!name?.trim()) return;
     try {
       await backend.mkdir(joinPath(path, name.trim(), backend.sep));
       void load(path);
     } catch (e) {
-      alert(`Lỗi tạo thư mục: ${e}`);
+      alert(t('fb.errMkdir', { err: String(e) }));
     }
   };
   const doRename = async (entry: FileEntry) => {
-    const name = window.prompt('Tên mới:', entry.name);
+    const name = window.prompt(t('fb.promptRename'), entry.name);
     if (!name?.trim() || name === entry.name) return;
     try {
       await backend.rename(
@@ -282,7 +284,7 @@ export function FilePanel({
       );
       void load(path);
     } catch (e) {
-      alert(`Lỗi đổi tên: ${e}`);
+      alert(t('fb.errRename', { err: String(e) }));
     }
   };
   // Actual deletion — the confirm popup gates this.
@@ -293,7 +295,7 @@ export function FilePanel({
       for (const e of list) await backend.remove(joinPath(path, e.name, backend.sep), e.isDir);
       void load(path);
     } catch (e) {
-      alert(`Lỗi xóa: ${e}`);
+      alert(t('fb.errRemove', { err: String(e) }));
     }
   };
 
@@ -303,14 +305,14 @@ export function FilePanel({
     const list = target && !selected.has(target.name) ? [target] : sel;
     return [
       { label: transferLabel, disabled: list.length === 0, onClick: () => onTransfer(list, path) },
-      { label: 'Mở', disabled: !target?.isDir, onClick: () => target && openEntry(target) },
-      { label: 'Đổi tên', disabled: !target, onClick: () => target && doRename(target) },
+      { label: t('fb.open'), disabled: !target?.isDir, onClick: () => target && openEntry(target) },
+      { label: t('fb.rename'), disabled: !target, onClick: () => target && doRename(target) },
       { label: '', separator: true },
-      { label: 'Thư mục mới', onClick: doMkdir },
-      { label: 'Làm mới', onClick: () => load(path) },
+      { label: t('fb.newFolder'), onClick: doMkdir },
+      { label: t('fb.refresh'), onClick: () => load(path) },
       { label: '', separator: true },
       {
-        label: 'Xóa',
+        label: t('fb.delete'),
         danger: true,
         disabled: list.length === 0,
         onClick: () => list.length && setConfirmDel(list),
@@ -344,13 +346,13 @@ export function FilePanel({
           {title}
         </span>
         <div style={{ display: 'flex', gap: 2, marginLeft: 'auto' }}>
-          <button className="fb-tool" title="Lên thư mục cha (Backspace)" onClick={goParent}>
+          <button className="fb-tool" title={t('fb.toParent')} onClick={goParent}>
             ↑
           </button>
-          <button className="fb-tool" title="Làm mới" onClick={() => load(path)}>
+          <button className="fb-tool" title={t('fb.refresh')} onClick={() => load(path)}>
             ⟳
           </button>
-          <button className="fb-tool" title="Thư mục mới" onClick={doMkdir}>
+          <button className="fb-tool" title={t('fb.newFolder')} onClick={doMkdir}>
             ⊕
           </button>
         </div>
@@ -377,13 +379,13 @@ export function FilePanel({
         ) : (
           <div
             className="fb-path"
-            title="Nhấp để sửa đường dẫn"
+            title={t('fb.editPath')}
             onClick={() => {
               setPathDraft(path);
               setEditingPath(true);
             }}
           >
-            {path || '(gốc — chọn ổ đĩa)'}
+            {path || t('fb.rootPick')}
           </div>
         )}
       </div>
@@ -392,7 +394,7 @@ export function FilePanel({
       <div style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)' }}>
         <input
           className="field"
-          placeholder="Lọc theo tên…"
+          placeholder={t('fb.filter')}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           style={{ padding: '3px 7px', fontSize: 11 }}
@@ -401,9 +403,9 @@ export function FilePanel({
 
       {/* Column header */}
       <div className="fb-row fb-head">
-        <span className="fb-c-name">Tên</span>
-        <span className="fb-c-size">Kích thước</span>
-        <span className="fb-c-date">Sửa đổi</span>
+        <span className="fb-c-name">{t('fb.colName')}</span>
+        <span className="fb-c-size">{t('fb.colSize')}</span>
+        <span className="fb-c-date">{t('fb.colDate')}</span>
       </div>
 
       {/* Listing (focusable for keyboard nav; drag = rubber-band select) */}
@@ -424,10 +426,10 @@ export function FilePanel({
         )}
         {error && <div style={{ padding: 12, color: 'var(--danger)', font: '400 11px var(--font-mono)' }}>{error}</div>}
         {loading && !entries.length && (
-          <div style={{ padding: 12, color: 'var(--text-muted)', fontSize: 11 }}>Đang tải…</div>
+          <div style={{ padding: 12, color: 'var(--text-muted)', fontSize: 11 }}>{t('fb.loading')}</div>
         )}
         {!error && !loading && !visible.length && (
-          <div style={{ padding: 12, color: 'var(--text-faint)', fontSize: 11 }}>Thư mục trống.</div>
+          <div style={{ padding: 12, color: 'var(--text-faint)', fontSize: 11 }}>{t('fb.emptyDir')}</div>
         )}
         {path && (
           <div className="fb-row fb-item" onDoubleClick={goParent}>
@@ -488,11 +490,11 @@ export function FilePanel({
             title="Đồng bộ toàn bộ thư mục này (mirror — cần xác nhận)"
             onClick={onSync}
           >
-            {syncLabel ?? '⟳ Đồng bộ'}
+            {syncLabel ?? `⟳ ${t('fb.verbSync')}`}
           </button>
         )}
         <span style={{ marginLeft: 'auto', font: '400 10px var(--font-mono)', color: 'var(--text-muted)' }}>
-          {selected.size ? `${selected.size} đã chọn` : `${visible.length} mục`}
+          {selected.size ? t('fb.selected', { n: selected.size }) : t('fb.itemCount', { n: visible.length })}
         </span>
       </div>
 
@@ -521,13 +523,13 @@ function DeleteConfirm({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const t = useT();
   const dirs = list.filter((e) => e.isDir).length;
   const files = list.length - dirs;
   const parts: string[] = [];
-  if (files) parts.push(`${files} tệp`);
-  if (dirs) parts.push(`${dirs} thư mục`);
-  const what =
-    list.length === 1 ? `"${list[0].name}"` : parts.join(' và ');
+  if (files) parts.push(t('fb.delFiles', { n: files }));
+  if (dirs) parts.push(t('fb.delDirs', { n: dirs }));
+  const what = list.length === 1 ? `"${list[0].name}"` : parts.join(' + ');
   return (
     <div
       onMouseDown={onCancel}
@@ -552,10 +554,10 @@ function DeleteConfirm({
         }}
       >
         <div style={{ font: '600 14px var(--font-ui)', color: 'var(--text)', marginBottom: 6 }}>
-          Xác nhận xóa
+          {t('fb.delTitle')}
         </div>
         <div style={{ font: '400 12px var(--font-ui)', color: 'var(--text-2)', marginBottom: 16, lineHeight: 1.5 }}>
-          Bạn có chắc chắn muốn xóa {what}? Tệp và thư mục sẽ bị xóa vĩnh viễn, không thể hoàn tác.
+          {t('fb.delMsg', { what })}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
@@ -563,7 +565,7 @@ function DeleteConfirm({
             style={{ flex: 1, height: 36, justifyContent: 'center' }}
             onClick={onCancel}
           >
-            Hủy
+            {t('common.cancel')}
           </button>
           <button
             style={{
@@ -583,7 +585,7 @@ function DeleteConfirm({
             }}
             onClick={onConfirm}
           >
-            Xóa vĩnh viễn
+            {t('fb.delConfirm')}
           </button>
         </div>
       </div>

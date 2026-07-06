@@ -4,6 +4,7 @@ import { SAVED_DND_MIME } from '../dnd';
 import { PaneBadge } from './ShellBadge';
 import { ContextMenu } from './ContextMenu';
 import { ClaudeIcon } from './ClaudeIcon';
+import { useT } from '../i18n';
 import type { Pane, Project } from '../types';
 
 export function Sidebar() {
@@ -18,6 +19,7 @@ export function Sidebar() {
   const togglePinPane = useStore((s) => s.togglePinPane);
   const openEditCmd = useStore((s) => s.openEditCmd);
   const openAddCmd = useStore((s) => s.openAddCmd);
+  const t = useT();
 
   const [query, setQuery] = useState('');
   const [menu, setMenu] = useState<{ x: number; y: number; paneId: string } | null>(null);
@@ -65,10 +67,10 @@ export function Sidebar() {
           e.preventDefault();
           setMenu({ x: e.clientX, y: e.clientY, paneId: c.id });
         }}
-        title={running ? 'Đang chạy · nhấp để hiện ở tab này' : 'Đã tắt · nhấp để chạy lại'}
+        title={running ? t('sidebar.itemRunning') : t('sidebar.itemStopped')}
       >
         <span
-          title={running ? 'Đang chạy' : 'Đã tắt'}
+          title={running ? t('sidebar.running') : t('sidebar.stopped')}
           style={{
             width: 7,
             height: 7,
@@ -96,11 +98,11 @@ export function Sidebar() {
               <ClaudeIcon
                 size={11}
                 className={stats[c.id]?.busy ? 'claude-pulse' : undefined}
-                title={stats[c.id]?.busy ? 'Claude đang xử lý' : 'Claude đang chờ lệnh'}
+                title={stats[c.id]?.busy ? t('sidebar.claudeBusy') : t('sidebar.claudeIdle')}
               />
             )}
             {c.pinned && (
-              <span title="Đã ghim" style={{ fontSize: 10 }}>
+              <span title={t('sidebar.pinned')} style={{ fontSize: 10 }}>
                 📌
               </span>
             )}
@@ -114,12 +116,12 @@ export function Sidebar() {
               textOverflow: 'ellipsis',
             }}
           >
-            {c.cwd || '(mặc định)'}
+            {c.cwd || t('common.default')}
           </div>
         </div>
         <span
           className={`pane-ctl${running ? ' danger' : ''}`}
-          title={running ? 'Dừng (Stop)' : 'Chạy lại'}
+          title={running ? t('sidebar.stop') : t('sidebar.restart')}
           onClick={(e) => {
             e.stopPropagation();
             running ? stopPane(c.id) : restartPane(c.id);
@@ -156,18 +158,18 @@ export function Sidebar() {
           letterSpacing: '0.08em',
         }}
       >
-        DANH SÁCH TERMINAL
+        {t('sidebar.title')}
       </div>
       <div style={{ padding: '0 12px 8px' }}>
         <button className="accent-btn" style={{ width: '100%', justifyContent: 'center' }} onClick={() => openAddCmd()}>
-          ＋ Terminal mới
+          {t('sidebar.newTerminal')}
         </button>
       </div>
       <div style={{ margin: '2px 12px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
         <span style={{ color: 'var(--text-muted)' }}>⌕</span>
         <input
           className="field"
-          placeholder="Tìm kiếm…"
+          placeholder={t('sidebar.search')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           style={{ padding: '6px 8px', fontSize: 11.5 }}
@@ -185,12 +187,12 @@ export function Sidebar() {
               lineHeight: 1.6,
             }}
           >
-            Chưa có terminal nào. Tạo bằng "＋ Terminal mới".
+            {t('sidebar.empty')}
           </div>
         )}
         {panes.length > 0 && filtered.length === 0 && (
           <div style={{ padding: '18px 10px', font: '400 11.5px var(--font-ui)', color: 'var(--text-faint)', textAlign: 'center' }}>
-            Không tìm thấy terminal phù hợp.
+            {t('sidebar.noMatch')}
           </div>
         )}
         {groups.map((g) => {
@@ -217,7 +219,7 @@ export function Sidebar() {
                     ▼
                   </span>
                   <span style={{ textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
-                    {g.project ? g.project.name : 'Khác'}
+                    {g.project ? g.project.name : t('sidebar.other')}
                   </span>
                   <span style={{ color: 'var(--text-faint)' }}>{g.items.length}</span>
                 </div>
@@ -240,7 +242,7 @@ export function Sidebar() {
           borderTop: '1px solid var(--border)',
         }}
       >
-        Kéo thả vào grid để hiện
+        {t('sidebar.hint')}
       </div>
 
       {menu && menuPane && (
@@ -249,17 +251,17 @@ export function Sidebar() {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
-            { label: 'Sửa Terminal', onClick: () => openEditCmd(menu.paneId) },
+            { label: t('pane.editTerminal'), onClick: () => openEditCmd(menu.paneId) },
             {
-              label: menuPane.pinned ? 'Bỏ ghim Terminal' : 'Ghim Terminal',
+              label: menuPane.pinned ? t('pane.unpin') : t('pane.pin'),
               onClick: () => togglePinPane(menu.paneId),
             },
             {
-              label: menuRunning ? 'Tắt Terminal' : 'Mở lại',
+              label: menuRunning ? t('pane.stopTerminal') : t('pane.reopen'),
               onClick: () => (menuRunning ? stopPane(menu.paneId) : restartPane(menu.paneId)),
             },
             { label: '', separator: true },
-            { label: 'Xóa Terminal', danger: true, onClick: () => removePane(menu.paneId) },
+            { label: t('pane.deleteTerminal'), danger: true, onClick: () => removePane(menu.paneId) },
           ]}
         />
       )}

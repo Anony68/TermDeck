@@ -18,7 +18,7 @@ export const LAYOUTS: Record<LayoutPreset, LayoutDef> = {
   grid2x2: { id: 'grid2x2', label: '2×2', capacity: 4, columns: '1fr 1fr', rows: '1fr 1fr' },
   big1plus2: {
     id: 'big1plus2',
-    label: '1 lớn + 2',
+    label: '1 + 2',
     capacity: 3,
     columns: '1.6fr 1fr',
     rows: '1fr 1fr',

@@ -9,6 +9,7 @@ import { ContextMenu, type MenuItem } from './ContextMenu';
 import { ClaudeIcon } from './ClaudeIcon';
 import { FileBrowser } from './FileBrowser';
 import { writePty } from '../ipc/pty';
+import { useT } from '../i18n';
 
 function fmtUptime(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -38,6 +39,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
   const stat = useStore((s) => s.stats[pane.id]);
   const setSlot = useSlots((s) => s.setSlot);
   const now = useNow();
+  const t = useT();
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(pane.name);
@@ -72,16 +74,16 @@ export function Pane({ pane }: { pane: PaneModel }) {
 
   const claudeItems: MenuItem[] = claudeRunning
     ? [
-        { label: 'Điều khiển từ xa (/remote-control)', onClick: () => typeCommand('/remote-control') },
-        { label: 'Tiếp tục phiên cũ (/resume)', onClick: () => typeCommand('/resume') },
-        { label: 'Đổi model (/model)', onClick: () => typeCommand('/model') },
-        { label: 'Nén hội thoại (/compact)', onClick: () => typeCommand('/compact') },
-        { label: 'Xóa hội thoại (/clear)', onClick: () => typeCommand('/clear') },
-        { label: 'Xem chi phí (/cost)', onClick: () => typeCommand('/cost') },
+        { label: t('claude.remote'), onClick: () => typeCommand('/remote-control') },
+        { label: t('claude.resume'), onClick: () => typeCommand('/resume') },
+        { label: t('claude.model'), onClick: () => typeCommand('/model') },
+        { label: t('claude.compact'), onClick: () => typeCommand('/compact') },
+        { label: t('claude.clear'), onClick: () => typeCommand('/clear') },
+        { label: t('claude.cost'), onClick: () => typeCommand('/cost') },
         { label: '', separator: true },
-        { label: 'Ngắt thao tác (Esc)', onClick: () => writePty(pane.id, '\x1b') },
+        { label: t('claude.esc'), onClick: () => writePty(pane.id, '\x1b') },
         {
-          label: 'Thoát Claude (Ctrl+C ×2)',
+          label: t('claude.quit'),
           danger: true,
           onClick: () => {
             writePty(pane.id, '\x03');
@@ -90,25 +92,25 @@ export function Pane({ pane }: { pane: PaneModel }) {
         },
       ]
     : [
-        { label: 'Chạy Claude', disabled: status !== 'running', onClick: () => typeCommand('claude') },
+        { label: t('claude.launch'), disabled: status !== 'running', onClick: () => typeCommand('claude') },
         {
-          label: 'Tiếp tục phiên trước (claude -c)',
+          label: t('claude.continue'),
           disabled: status !== 'running',
           onClick: () => typeCommand('claude -c'),
         },
         {
-          label: 'Chọn phiên để mở (claude -r)',
+          label: t('claude.pick'),
           disabled: status !== 'running',
           onClick: () => typeCommand('claude -r'),
         },
         {
-          label: 'Chạy bỏ qua xác nhận (nguy hiểm)',
+          label: t('claude.danger'),
           disabled: status !== 'running',
           onClick: () => typeCommand('claude --dangerously-skip-permissions'),
         },
         { label: '', separator: true },
         {
-          label: 'Cập nhật Claude (claude update)',
+          label: t('claude.update'),
           disabled: status !== 'running',
           onClick: () => typeCommand('claude update'),
         },
@@ -171,7 +173,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
           />
         ) : (
           <span
-            title="Nhấp đúp để đổi tên"
+            title={t('pane.renameHint')}
             onDoubleClick={() => {
               setDraft(pane.name);
               setEditing(true);
@@ -189,7 +191,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
           <ClaudeIcon
             size={13}
             className={claudeBusy ? 'claude-pulse' : undefined}
-            title={claudeBusy ? 'Claude Code — đang xử lý' : 'Claude Code — đang chờ lệnh'}
+            title={claudeBusy ? t('pane.claudeBusyTip') : t('pane.claudeIdleTip')}
           />
         )}
         <span
@@ -204,16 +206,16 @@ export function Pane({ pane }: { pane: PaneModel }) {
         >
           {pane.ssh
             ? `${pane.ssh.user}@${pane.ssh.host}:${pane.ssh.port}`
-            : pane.cwd || '(mặc định)'}
+            : pane.cwd || t('common.default')}
         </span>
         {pane.pinned && (
-          <span title="Đã ghim — hiện ở mọi tab" style={{ fontSize: 11, lineHeight: 1 }}>
+          <span title={t('pane.pinnedTip')} style={{ fontSize: 11, lineHeight: 1 }}>
             📌
           </span>
         )}
         {!isBrowser && (
           <span
-            title={status === 'running' ? 'Đang chạy' : `Đã kết thúc (exit ${runtime?.exitCode ?? 0})`}
+            title={status === 'running' ? t('pane.running') : t('pane.exited', { code: runtime?.exitCode ?? 0 })}
             style={{
               width: 7,
               height: 7,
@@ -227,7 +229,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
         {!isBrowser && (
           <span
             className="pane-ctl"
-            title={claudeRunning ? 'Lệnh nhanh Claude Code' : 'Claude Code — chạy trong terminal này'}
+            title={claudeRunning ? t('pane.claudeQuick') : t('pane.claudeRun')}
             onClick={(e) => {
               e.stopPropagation();
               setFocusedPane(pane.id);
@@ -239,14 +241,14 @@ export function Pane({ pane }: { pane: PaneModel }) {
         )}
         <span
           className="pane-ctl"
-          title={isBrowser ? 'Kết nối lại' : 'Mở lại (restart)'}
+          title={isBrowser ? t('pane.reconnect') : t('pane.restart')}
           onClick={() => restartPane(pane.id)}
         >
           ⟳
         </span>
         <span
           className="pane-ctl"
-          title="Ẩn khỏi tab này (cmd vẫn chạy nền)"
+          title={t('pane.hide')}
           style={{ fontSize: 11 }}
           onClick={() => removeFromTab(pane.id)}
         >
@@ -260,10 +262,10 @@ export function Pane({ pane }: { pane: PaneModel }) {
         <div style={{ flex: 1, display: 'grid', placeItems: 'center', minHeight: 0 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
             <div style={{ font: '400 11.5px var(--font-mono)', color: 'var(--text-muted)' }}>
-              Tiến trình đã kết thúc (exit {runtime?.exitCode ?? 0})
+              {t('pane.exitedMsg', { code: runtime?.exitCode ?? 0 })}
             </div>
             <button className="outline-accent-btn" onClick={() => restartPane(pane.id)}>
-              ⟳ Mở lại đúng path
+              {t('pane.reopenPath')}
             </button>
           </div>
         </div>
@@ -288,44 +290,44 @@ export function Pane({ pane }: { pane: PaneModel }) {
             overflow: 'hidden',
           }}
         >
-          <span title="Thời gian chạy">⏱ {fmtUptime(now - (runtime?.startedAt ?? now))}</span>
+          <span title={t('pane.uptime')}>⏱ {fmtUptime(now - (runtime?.startedAt ?? now))}</span>
           <span title="CPU">CPU {stat ? stat.cpu.toFixed(1) : '0.0'}%</span>
           <span title="RAM">RAM {stat ? fmtMem(stat.mem) : '—'}</span>
           {claudeRunning && (
             <span
-              title={claudeBusy ? 'Claude đang xử lý' : 'Claude đang chờ lệnh'}
+              title={claudeBusy ? t('pane.claudeBusy') : t('pane.claudeIdle')}
               style={{ color: '#d97757', display: 'flex', alignItems: 'center', gap: 4 }}
             >
               <ClaudeIcon size={10} className={claudeBusy ? 'claude-pulse' : undefined} />
-              {claudeBusy ? 'đang xử lý…' : 'sẵn sàng'}
+              {claudeBusy ? t('pane.claudeBusyShort') : t('pane.claudeIdleShort')}
             </span>
           )}
           {claudeRunning && (
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
               <button
                 className="claude-chip"
-                title="/remote-control — điều khiển phiên này từ claude.ai / điện thoại"
+                title={t('claude.chipRemote')}
                 onClick={() => typeCommand('/remote-control')}
               >
                 Remote
               </button>
               <button
                 className="claude-chip"
-                title="/resume — tiếp tục phiên cũ"
+                title={t('claude.chipResume')}
                 onClick={() => typeCommand('/resume')}
               >
                 Resume
               </button>
               <button
                 className="claude-chip"
-                title="/compact — nén hội thoại để tiết kiệm context"
+                title={t('claude.chipCompact')}
                 onClick={() => typeCommand('/compact')}
               >
                 Compact
               </button>
               <button
                 className="claude-chip"
-                title="Gửi phím Esc — ngắt thao tác Claude đang chạy"
+                title={t('claude.chipEsc')}
                 onClick={() => writePty(pane.id, '\x1b')}
               >
                 Esc
@@ -350,17 +352,17 @@ export function Pane({ pane }: { pane: PaneModel }) {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
-            { label: 'Sửa Terminal', onClick: () => openEditCmd(pane.id) },
+            { label: t('pane.editTerminal'), onClick: () => openEditCmd(pane.id) },
             {
-              label: pane.pinned ? 'Bỏ ghim Terminal' : 'Ghim Terminal',
+              label: pane.pinned ? t('pane.unpin') : t('pane.pin'),
               onClick: () => togglePinPane(pane.id),
             },
             {
-              label: status === 'running' ? 'Tắt Terminal' : 'Mở lại',
+              label: status === 'running' ? t('pane.stopTerminal') : t('pane.reopen'),
               onClick: () => (status === 'running' ? stopPane(pane.id) : restartPane(pane.id)),
             },
             { label: '', separator: true },
-            { label: 'Xóa Terminal', danger: true, onClick: () => removePane(pane.id) },
+            { label: t('pane.deleteTerminal'), danger: true, onClick: () => removePane(pane.id) },
           ]}
         />
       )}

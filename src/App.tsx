@@ -11,9 +11,11 @@ import { StatusBar } from './components/StatusBar';
 import { TerminalLayer } from './components/TerminalLayer';
 import { AddCmdDialog } from './dialogs/AddCmdDialog';
 import { SettingsWindow } from './settings/SettingsWindow';
+import { useT } from './i18n';
 
 export default function App() {
   const hydrated = useStore((s) => s.hydrated);
+  const t = useT();
   const sidebarVisible = useStore((s) => s.settings.sidebarVisible);
   const uiScale = useStore((s) => s.settings.uiScale);
   const addCmdOpen = useStore((s) => s.ui.addCmdOpen);
@@ -102,7 +104,7 @@ export default function App() {
           font: '400 13px var(--font-ui)',
         }}
       >
-        Đang tải…
+        {t('common.loading')}
       </div>
     );
   }

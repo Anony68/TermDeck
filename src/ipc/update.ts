@@ -1,4 +1,9 @@
 import { IS_TAURI } from './env';
+import { translate } from '../i18n';
+import { useStore } from '../state/store';
+
+const tr = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
+  translate(useStore.getState().settings.language, key, params);
 
 export interface UpdateResult {
   current: string;
@@ -41,12 +46,12 @@ export async function getAppVersion(): Promise<string> {
 export async function checkUpdate(repo: string): Promise<UpdateResult> {
   const current = await getAppVersion();
   const clean = repo.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\/+$/, '');
-  if (!/^[\w.-]+\/[\w.-]+$/.test(clean)) throw new Error('Repo không hợp lệ (định dạng owner/repo)');
+  if (!/^[\w.-]+\/[\w.-]+$/.test(clean)) throw new Error(tr('update.errRepo'));
   const res = await fetch(`https://api.github.com/repos/${clean}/releases/latest`, {
     headers: { Accept: 'application/vnd.github+json' },
   });
-  if (res.status === 404) throw new Error('Chưa có bản phát hành công khai nào trên repo này');
-  if (!res.ok) throw new Error(`GitHub trả về ${res.status}`);
+  if (res.status === 404) throw new Error(tr('update.err404'));
+  if (!res.ok) throw new Error(tr('update.errStatus', { status: res.status }));
   const data = await res.json();
   const latest = String(data.tag_name ?? '').replace(/^v/i, '');
   const url = data.html_url ?? `https://github.com/${clean}/releases/latest`;

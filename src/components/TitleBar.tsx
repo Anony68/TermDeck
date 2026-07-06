@@ -1,7 +1,9 @@
 import { windowControls } from '../ipc/api';
 import { TabStrip } from './TabStrip';
+import { useT } from '../i18n';
 
 export function TitleBar() {
+  const t = useT();
   return (
     <div
       data-tauri-drag-region
@@ -40,13 +42,13 @@ export function TitleBar() {
       <div data-tauri-drag-region style={{ flex: 1, alignSelf: 'stretch' }} />
 
       <div style={{ display: 'flex', height: 38 }}>
-        <div className="wc" title="Thu nhỏ" style={{ fontSize: 13 }} onClick={() => windowControls.minimize()}>
+        <div className="wc" title={t('win.minimize')} style={{ fontSize: 13 }} onClick={() => windowControls.minimize()}>
           ─
         </div>
-        <div className="wc" title="Phóng to" style={{ fontSize: 11 }} onClick={() => windowControls.toggleMaximize()}>
+        <div className="wc" title={t('win.maximize')} style={{ fontSize: 11 }} onClick={() => windowControls.toggleMaximize()}>
           ▢
         </div>
-        <div className="wc close" title="Đóng" style={{ fontSize: 12 }} onClick={() => windowControls.close()}>
+        <div className="wc close" title={t('win.close')} style={{ fontSize: 12 }} onClick={() => windowControls.close()}>
           ✕
         </div>
       </div>

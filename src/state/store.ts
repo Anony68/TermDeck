@@ -19,6 +19,7 @@ import { loadPersisted, savePersisted } from '../ipc/persist';
 import { killSession } from '../ipc/session';
 import { secretDelete } from '../ipc/ssh';
 import { isPaneActive } from './activity';
+import { translate } from '../i18n';
 
 const uid = () =>
   Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
@@ -34,6 +35,7 @@ const DEFAULT_SETTINGS: Settings = {
   fontSize: 'medium',
   uiScale: 1,
   githubRepo: '',
+  language: 'en',
 };
 
 const STORE_VERSION = 4;
@@ -315,7 +317,10 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     addTab: () => {
-      const t = freshTab(get().settings.defaultLayout);
+      const t = freshTab(
+        get().settings.defaultLayout,
+        translate(get().settings.language, 'default.tabName')
+      );
       commit({ tabs: [...get().tabs, t], activeTabId: t.id });
     },
 
@@ -565,7 +570,12 @@ export const useStore = create<AppState>((set, get) => {
 
     addProject: (name, path) => {
       const id = uid();
-      commit({ projects: [...get().projects, { id, name: name.trim() || 'Dự án', path }] });
+      commit({
+        projects: [
+          ...get().projects,
+          { id, name: name.trim() || translate(get().settings.language, 'default.projectName'), path },
+        ],
+      });
       return id;
     },
 

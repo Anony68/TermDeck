@@ -25,6 +25,8 @@ export type LayoutPreset =
   | 'grid3x2';
 export type PaneStatus = 'running' | 'exited';
 export type FontSize = 'small' | 'medium' | 'large';
+/** UI language. */
+export type Lang = 'vi' | 'en';
 
 /**
  * A cmd is a persistent, globally-managed terminal (listed in the sidebar). Its
@@ -85,6 +87,8 @@ export interface Settings {
   uiScale: number;
   /** "owner/repo" used by the GitHub update checker. */
   githubRepo: string;
+  /** UI language (defaults to Vietnamese). */
+  language: Lang;
 }
 
 export interface Snapshot {

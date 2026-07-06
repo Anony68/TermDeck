@@ -1,5 +1,6 @@
 import { useStore, activeTabSelector, displayItems } from '../state/store';
 import { LAYOUTS, fitLayout } from '../layouts';
+import { useT } from '../i18n';
 
 function fmtTime(ms: number | null): string {
   if (!ms) return '';
@@ -13,6 +14,7 @@ export function StatusBar() {
   const panes = useStore((s) => s.panes);
   const runtime = useStore((s) => s.runtime);
   const savedAt = useStore((s) => s.savedAt);
+  const t = useT();
   if (!tab) return null;
 
   const items = displayItems(tab, panes);
@@ -36,14 +38,12 @@ export function StatusBar() {
         flex: 'none',
       }}
     >
-      <span>tab: {tab.name}</span>
-      <span>
-        {cmdCount} terminal · {running} đang chạy
-      </span>
+      <span>{t('status.tab', { name: tab.name })}</span>
+      <span>{t('status.counts', { count: cmdCount, running })}</span>
       <span style={{ flex: 1 }} />
-      <span>bố cục {label}</span>
+      <span>{t('status.layout', { label })}</span>
       <span style={{ color: 'var(--accent)' }}>
-        ● {savedAt ? `phiên đã lưu ${fmtTime(savedAt)}` : 'tự động lưu'}
+        ● {savedAt ? t('status.saved', { time: fmtTime(savedAt) }) : t('status.autosave')}
       </span>
     </div>
   );

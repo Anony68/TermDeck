@@ -26,6 +26,7 @@ import {
 } from './transfer';
 import { planSync, runSync, type SyncOps, type SyncPlan, type SyncSummary } from './sync';
 import { IS_TAURI } from '../ipc/env';
+import { useT } from '../i18n';
 
 type Conn = 'connecting' | 'ready' | 'error' | 'local-only';
 /** Sync direction: 'up' = local ▶ remote, 'down' = remote ▶ local. */
@@ -38,6 +39,7 @@ type SyncDir = 'up' | 'down';
  */
 export function FileBrowser({ pane }: { pane: Pane }) {
   const setBrowserPath = useStore((s) => s.setBrowserPath);
+  const t = useT();
   const hasRemote = !!pane.ssh && pane.kind === 'browser';
   const [conn, setConn] = useState<Conn>(hasRemote ? 'connecting' : 'local-only');
   const [connErr, setConnErr] = useState<string | null>(null);
@@ -175,7 +177,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
       });
       setSummary({ ...result, verb });
     } catch (e) {
-      alert(`Lỗi truyền file: ${e}`);
+      alert(t('fb.transferErr', { err: String(e) }));
     } finally {
       setBusy(false);
       setBatch(null);
@@ -186,9 +188,9 @@ export function FileBrowser({ pane }: { pane: Pane }) {
   };
 
   const onUpload = (entries: FileEntry[], fromLocal: string) =>
-    void runBatch(entries, fromLocal, remoteCwd.current, uploadOps, 'Tải lên');
+    void runBatch(entries, fromLocal, remoteCwd.current, uploadOps, t('fb.verbUpload'));
   const onDownload = (entries: FileEntry[], fromRemote: string) =>
-    void runBatch(entries, fromRemote, localCwd.current, downloadOps, 'Tải về');
+    void runBatch(entries, fromRemote, localCwd.current, downloadOps, t('fb.verbDownload'));
 
   // One-way mirror ops for each direction. 'up' = local ▶ remote (upload),
   // 'down' = remote ▶ local (download). Both delete extras on the target.
@@ -224,7 +226,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
       const plan = await planSync(src, dst, ops);
       setSyncPlan({ plan, src, dst, ops, dir });
     } catch (e) {
-      alert(`Lỗi phân tích đồng bộ: ${e}`);
+      alert(t('sync.errPlan', { err: String(e) }));
     } finally {
       setPlanning(false);
     }
@@ -235,15 +237,15 @@ export function FileBrowser({ pane }: { pane: Pane }) {
     setSyncPlan(null);
     setBusy(true);
     cancelRef.current = false;
-    setBatch({ done: 0, total: plan.uploads.length, verb: 'Đồng bộ' });
+    setBatch({ done: 0, total: plan.uploads.length, verb: t('fb.verbSync') });
     try {
       const result = await runSync(src, dst, plan, ops, {
-        onProgress: (done, total) => setBatch({ done, total, verb: 'Đồng bộ' }),
+        onProgress: (done, total) => setBatch({ done, total, verb: t('fb.verbSync') }),
         shouldCancel: () => cancelRef.current,
       });
       setSyncSummary({ ...result, dir });
     } catch (e) {
-      alert(`Lỗi đồng bộ: ${e}`);
+      alert(t('sync.errRun', { err: String(e) }));
     } finally {
       setBusy(false);
       setBatch(null);
@@ -256,7 +258,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
   if (!IS_TAURI) {
     return (
       <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-        Trình quản lý file chỉ hoạt động trong ứng dụng (Tauri).
+        {t('fb.onlyTauri')}
       </div>
     );
   }
@@ -270,17 +272,17 @@ export function FileBrowser({ pane }: { pane: Pane }) {
         {initialLocal !== null && (
           <FilePanel
             key={`local-${initialLocal}`}
-            title="MÁY CỤC BỘ (LOCAL)"
+            title={t('fb.local')}
             backend={localBackend}
             initialPath={initialLocal}
             accent="var(--sh-ps)"
-            transferLabel={hasRemote ? 'Tải lên ▶' : 'Sao chép ▶'}
+            transferLabel={hasRemote ? t('fb.upload') : t('fb.copyRight')}
             refreshKey={leftKey}
             onPathChange={setLocalCwd}
             onTransfer={(entries, from) =>
-              hasRemote ? onUpload(entries, from) : alert('Chưa cấu hình SSH cho pane này.')
+              hasRemote ? onUpload(entries, from) : alert(t('fb.noSsh'))
             }
-            syncLabel={planning ? '⟳ …' : '⟳ Đồng bộ ▶'}
+            syncLabel={planning ? t('fb.syncBusy') : t('fb.syncUp')}
             onSync={hasRemote && conn === 'ready' && !busy ? () => onSyncClick('up') : undefined}
           />
         )}
@@ -288,15 +290,15 @@ export function FileBrowser({ pane }: { pane: Pane }) {
         {hasRemote ? (
           conn === 'ready' ? (
             <FilePanel
-              title={`REMOTE — ${pane.ssh?.user}@${pane.ssh?.host}`}
+              title={t('fb.remote', { user: pane.ssh?.user ?? '', host: pane.ssh?.host ?? '' })}
               backend={remoteBackend}
               initialPath={pane.browserRemotePath ?? pane.ssh?.remotePath ?? '/'}
               accent="var(--accent)"
-              transferLabel="◀ Tải xuống"
+              transferLabel={t('fb.download')}
               refreshKey={rightKey}
               onPathChange={setRemoteCwd}
               onTransfer={(entries, from) => onDownload(entries, from)}
-              syncLabel={planning ? '◀ …' : '◀ Đồng bộ'}
+              syncLabel={planning ? t('fb.syncBusyDown') : t('fb.syncDown')}
               onSync={!busy ? () => onSyncClick('down') : undefined}
             />
           ) : (
@@ -308,7 +310,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
                     color: conn === 'error' ? 'var(--danger)' : 'var(--text-2)',
                   }}
                 >
-                  {conn === 'connecting' ? 'Đang kết nối SFTP…' : 'Không kết nối được SFTP'}
+                  {conn === 'connecting' ? t('fb.connecting') : t('fb.notReady')}
                 </div>
                 {connErr && (
                   <div
@@ -330,14 +332,14 @@ export function FileBrowser({ pane }: { pane: Pane }) {
           initialLocal !== null && (
             <FilePanel
               key={`local2-${pane.browserRemotePath ?? initialLocal}`}
-              title="MÁY CỤC BỘ (LOCAL) — 2"
+              title={t('fb.local2')}
               backend={localBackend}
               initialPath={pane.browserRemotePath ?? initialLocal}
               accent="var(--sh-ps)"
-              transferLabel="◀ Sao chép"
+              transferLabel={t('fb.copyLeft')}
               refreshKey={rightKey}
               onPathChange={setRemoteCwd}
-              onTransfer={() => alert('Chưa cấu hình SSH — không có đích remote.')}
+              onTransfer={() => alert(t('fb.noRemote'))}
             />
           )
         )}
@@ -361,7 +363,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
         {busy ? (
           <>
             <span style={{ color: 'var(--accent)', whiteSpace: 'nowrap' }}>
-              {batch?.verb ?? 'Đang truyền'} {batch ? `${batch.done}/${batch.total}` : ''}
+              {batch?.verb ?? t('fb.transferring')} {batch ? `${batch.done}/${batch.total}` : ''}
               {progress ? ` · ${progress.name}` : '…'}
             </span>
             {progress && (
@@ -393,36 +395,32 @@ export function FileBrowser({ pane }: { pane: Pane }) {
             <button
               className="fb-cancel"
               style={{ marginLeft: 'auto' }}
-              title="Dừng truyền sau tệp hiện tại"
+              title={t('fb.cancelTip')}
               onClick={() => (cancelRef.current = true)}
             >
-              ✕ Hủy
+              {t('fb.cancelBtn')}
             </button>
           </>
         ) : planning ? (
-          <span style={{ color: 'var(--accent)' }}>Đang phân tích khác biệt để đồng bộ…</span>
+          <span style={{ color: 'var(--accent)' }}>{t('fb.analyzing')}</span>
         ) : syncSummary ? (
           <span style={{ color: syncSummary.cancelled ? 'var(--warn)' : 'var(--accent)' }}>
-            {syncSummary.cancelled ? '■ Đồng bộ đã hủy — ' : '✓ Đồng bộ — '}
-            {syncSummary.dir === 'up' ? 'tải lên' : 'tải về'} {syncSummary.uploaded}
+            {syncSummary.cancelled ? t('fb.syncCancelled') : t('fb.syncDone')}
+            {syncSummary.dir === 'up' ? t('fb.syncUploaded') : t('fb.syncDownloaded')} {syncSummary.uploaded}
             {syncSummary.deleted > 0 &&
-              ` · xóa ${syncSummary.deleted} (${syncSummary.dir === 'up' ? 'remote' : 'cục bộ'})`}
-            {syncSummary.unchanged > 0 && ` · giữ nguyên ${syncSummary.unchanged}`}
-            {syncSummary.failed > 0 && ` · lỗi ${syncSummary.failed}`}
+              ` · ${t('fb.syncDeleted', { n: syncSummary.deleted, side: syncSummary.dir === 'up' ? t('fb.sideRemote') : t('fb.sideLocal') })}`}
+            {syncSummary.unchanged > 0 && ` · ${t('fb.syncKept', { n: syncSummary.unchanged })}`}
+            {syncSummary.failed > 0 && ` · ${t('fb.errN', { n: syncSummary.failed })}`}
           </span>
         ) : summary ? (
           <span style={{ color: summary.cancelled ? 'var(--warn)' : 'var(--accent)' }}>
-            {summary.cancelled ? '■ Đã hủy — ' : '✓ '}
-            {summary.verb} {summary.transferred} tệp
-            {summary.skipped > 0 && ` · bỏ qua ${summary.skipped}`}
-            {summary.failed > 0 && ` · lỗi ${summary.failed}`}
+            {summary.cancelled ? t('fb.cancelled') : '✓ '}
+            {t('fb.transferredN', { verb: summary.verb, n: summary.transferred })}
+            {summary.skipped > 0 && ` · ${t('fb.skippedN', { n: summary.skipped })}`}
+            {summary.failed > 0 && ` · ${t('fb.errN', { n: summary.failed })}`}
           </span>
         ) : (
-          <span>
-            {hasRemote
-              ? 'Sẵn sàng — chọn tệp/thư mục rồi Tải lên/Tải xuống · SYNC để đồng bộ (chuột phải để có thêm lệnh)'
-              : 'Chế độ 2 thư mục cục bộ'}
-          </span>
+          <span>{hasRemote ? t('fb.idleRemote') : t('fb.idleLocal')}</span>
         )}
       </div>
 
@@ -448,15 +446,16 @@ function SyncConfirm({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const t = useT();
   const { plan, src, dst, dir } = info;
   const nothing = plan.uploads.length === 0 && plan.extrasCount === 0;
   // Source/target labels + colours follow the direction (local = blue, remote = green).
   const srcIsLocal = dir === 'up';
-  const srcLabel = srcIsLocal ? 'Cục bộ (nguồn)' : 'Remote (nguồn)';
-  const dstLabel = srcIsLocal ? 'Remote (đích)' : 'Cục bộ (đích)';
+  const srcLabel = srcIsLocal ? t('sync.srcLocal') : t('sync.srcRemote');
+  const dstLabel = srcIsLocal ? t('sync.dstRemote') : t('sync.dstLocal');
   const srcColor = srcIsLocal ? 'var(--sh-ps)' : 'var(--accent)';
   const dstColor = srcIsLocal ? 'var(--accent)' : 'var(--sh-ps)';
-  const transferVerb = srcIsLocal ? 'Tải lên' : 'Tải về';
+  const transferVerb = srcIsLocal ? t('fb.verbUpload') : t('fb.verbDownload');
   return (
     <div
       onMouseDown={onCancel}
@@ -481,7 +480,7 @@ function SyncConfirm({
         }}
       >
         <div style={{ font: '600 14px var(--font-ui)', color: 'var(--text)', marginBottom: 10 }}>
-          Đồng bộ thư mục (một chiều)
+          {t('sync.title')}
         </div>
         <div
           style={{
@@ -501,27 +500,25 @@ function SyncConfirm({
         </div>
         {nothing ? (
           <div style={{ font: '400 12px var(--font-ui)', color: 'var(--text-2)', marginBottom: 16 }}>
-            Đích đã khớp với nguồn — không có gì để đồng bộ.
+            {t('sync.nothing')}
           </div>
         ) : (
           <div style={{ font: '400 12px var(--font-ui)', color: 'var(--text-2)', marginBottom: 16, lineHeight: 1.6 }}>
-            Thao tác sẽ:
+            {t('sync.willDo')}
             <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-              <li>
-                {transferVerb} <b style={{ color: 'var(--text)' }}>{plan.uploads.length}</b> tệp mới/đã thay đổi
-              </li>
+              <li>{t('sync.willUpload', { verb: transferVerb, n: plan.uploads.length })}</li>
               {plan.extrasCount > 0 && (
                 <li style={{ color: 'var(--danger)' }}>
-                  <b>XÓA {plan.extrasCount}</b> mục thừa ở {srcIsLocal ? 'remote' : 'cục bộ'} (đích) — không có trong nguồn
+                  {t('sync.willDelete', { n: plan.extrasCount, side: srcIsLocal ? t('fb.sideRemote') : t('fb.sideLocal') })}
                 </li>
               )}
-              <li style={{ color: 'var(--text-muted)' }}>Giữ nguyên {plan.unchanged} tệp đã khớp</li>
+              <li style={{ color: 'var(--text-muted)' }}>{t('sync.willKeep', { n: plan.unchanged })}</li>
             </ul>
           </div>
         )}
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="ghost-btn" style={{ flex: 1, height: 36, justifyContent: 'center' }} onClick={onCancel}>
-            {nothing ? 'Đóng' : 'Hủy'}
+            {nothing ? t('sync.close') : t('common.cancel')}
           </button>
           {!nothing && (
             <button
@@ -529,7 +526,7 @@ function SyncConfirm({
               style={{ flex: 1, height: 36, justifyContent: 'center' }}
               onClick={onConfirm}
             >
-              Đồng bộ ngay
+              {t('sync.run')}
             </button>
           )}
         </div>
@@ -553,6 +550,7 @@ function ConflictDialog({
   name: string;
   onChoose: (a: ConflictAction) => void;
 }) {
+  const t = useT();
   return (
     <div
       style={{
@@ -575,27 +573,26 @@ function ConflictDialog({
         }}
       >
         <div style={{ font: '600 14px var(--font-ui)', color: 'var(--text)', marginBottom: 6 }}>
-          Tệp đã tồn tại
+          {t('conflict.title')}
         </div>
         <div style={{ font: '400 12px var(--font-ui)', color: 'var(--text-2)', marginBottom: 16, lineHeight: 1.5 }}>
-          Đích đến đã có{' '}
-          <span style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{name}</span>. Bạn muốn làm gì?
+          {t('conflict.msg', { name })}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="accent-btn" style={CONFLICT_BTN} onClick={() => onChoose('overwrite')}>
-              Ghi đè
+              {t('conflict.overwrite')}
             </button>
             <button className="accent-btn" style={CONFLICT_BTN} onClick={() => onChoose('overwrite-all')}>
-              Ghi đè tất cả
+              {t('conflict.overwriteAll')}
             </button>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="ghost-btn" style={CONFLICT_BTN} onClick={() => onChoose('skip')}>
-              Bỏ qua
+              {t('conflict.skip')}
             </button>
             <button className="ghost-btn" style={CONFLICT_BTN} onClick={() => onChoose('skip-all')}>
-              Bỏ qua tất cả
+              {t('conflict.skipAll')}
             </button>
           </div>
           <button
@@ -603,7 +600,7 @@ function ConflictDialog({
             style={{ ...CONFLICT_BTN, color: 'var(--danger)' }}
             onClick={() => onChoose('cancel')}
           >
-            Hủy toàn bộ
+            {t('conflict.cancelAll')}
           </button>
         </div>
       </div>

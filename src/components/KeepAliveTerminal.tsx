@@ -6,6 +6,7 @@ import { spawnPty } from '../ipc/pty';
 import { spawnSsh } from '../ipc/ssh';
 import { writeSession, resizeSession, killSession, paneKind } from '../ipc/session';
 import { copyText, pasteText } from '../ipc/clipboard';
+import { useT } from '../i18n';
 import { useStore, findPane } from '../state/store';
 import { markPaneActivity, clearPaneActivity } from '../state/activity';
 import { useSlots } from '../state/slots';
@@ -63,6 +64,7 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
   const paneRef = useRef(pane);
   paneRef.current = pane;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const t = useT();
 
   // Right-click: copy the selection if there is one, otherwise paste — like
   // Windows Terminal. Shift+right-click still opens the full context menu.
@@ -161,8 +163,8 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
     };
 
     if (!IS_TAURI) {
-      term.writeln('\x1b[38;2;91;100;114m# Xem trước giao diện (chưa chạy trong Tauri).\x1b[0m');
-      term.writeln(`\x1b[38;2;74;163;255m${p.shell}\x1b[0m  ${p.cwd || '(thư mục mặc định)'}`);
+      term.writeln(`\x1b[38;2;91;100;114m${t('term.previewNote')}\x1b[0m`);
+      term.writeln(`\x1b[38;2;74;163;255m${p.shell}\x1b[0m  ${p.cwd || t('common.default')}`);
       return () => {
         cleanupResize();
         term.dispose();
@@ -208,7 +210,7 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
             ...common,
           });
     spawning.catch((e) => {
-      term.writeln(`\r\n\x1b[31mLỗi kết nối: ${e}\x1b[0m`);
+      term.writeln(`\r\n\x1b[31m${t('term.connError', { err: String(e) })}\x1b[0m`);
       setPaneStatus(paneId, 'exited', -1);
     });
 
@@ -261,24 +263,24 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
       onClose={() => setMenu(null)}
       items={[
         {
-          label: 'Sao chép',
+          label: t('term.copy'),
           disabled: !termRef.current?.hasSelection(),
           onClick: () => {
-            const t = termRef.current;
-            if (t?.hasSelection()) void copyText(t.getSelection());
+            const term = termRef.current;
+            if (term?.hasSelection()) void copyText(term.getSelection());
           },
         },
         {
-          label: 'Dán',
+          label: t('term.paste'),
           onClick: () =>
             void pasteText().then((txt) => {
               const cur = paneRef.current;
               if (txt && cur) writeSession(cur, txt);
             }),
         },
-        { label: 'Chọn tất cả', onClick: () => termRef.current?.selectAll() },
+        { label: t('term.selectAll'), onClick: () => termRef.current?.selectAll() },
         { label: '', separator: true },
-        { label: 'Xóa màn hình', onClick: () => termRef.current?.clear() },
+        { label: t('term.clear'), onClick: () => termRef.current?.clear() },
       ]}
     />
   );

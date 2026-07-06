@@ -166,6 +166,10 @@ fn connect(app: &AppHandle, pane_id: &str, cfg: &SshConfig) -> Result<Session, S
     tcp.set_nodelay(true).ok();
 
     let mut sess = Session::new().map_err(|e| e.to_string())?;
+    // Bound the handshake + auth so a silent/wrong-protocol server can't hang the
+    // connection forever. Cleared to 0 (no timeout) once authenticated so it
+    // never interrupts long-running shell I/O or SFTP transfers.
+    sess.set_timeout(15_000);
     sess.set_tcp_stream(tcp);
     sess.handshake().map_err(|e| format!("SSH handshake lỗi: {e}"))?;
 
@@ -187,6 +191,7 @@ fn connect(app: &AppHandle, pane_id: &str, cfg: &SshConfig) -> Result<Session, S
     if !sess.authenticated() {
         return Err("xác thực thất bại".into());
     }
+    sess.set_timeout(0); // no timeout for post-auth I/O (shell / SFTP transfers)
     sess.set_keepalive(true, 30);
     Ok(sess)
 }
@@ -209,26 +214,54 @@ pub fn spawn_ssh(
         let _ = tx.send(SshOp::Kill);
     }
 
-    let sess = connect(&app, &pane_id, &cfg)?;
-    let mut ch = sess.channel_session().map_err(|e| e.to_string())?;
-    ch.request_pty("xterm-256color", None, Some((cols as u32, rows as u32, 0, 0)))
-        .map_err(|e| e.to_string())?;
-    ch.shell().map_err(|e| e.to_string())?;
-
-    if let Some(c) = command {
-        if !c.trim().is_empty() {
-            let _ = ch.write_all(format!("{c}\n").as_bytes());
-            let _ = ch.flush();
-        }
-    }
-
-    sess.set_blocking(false);
-
+    // Register the op channel up front so write/resize/kill during connect queue.
     let (tx, rx) = mpsc::channel::<SshOp>();
     state.terms.lock().unwrap().insert(pane_id.clone(), tx);
     let terms = state.terms.clone();
 
+    // Everything below blocks (TCP connect, handshake, auth). Run it ALL on a
+    // background thread so the command returns immediately and the UI never
+    // freezes when a host is unreachable or the server never answers.
     std::thread::spawn(move || {
+        // Surface a connection/setup error into the terminal, then exit the pane.
+        let fail = |on_event: &Channel<PtyEvent>, msg: String| {
+            let line = format!("\r\n\x1b[31m{msg}\x1b[0m\r\n");
+            let _ = on_event.send(PtyEvent::Data { data: line.into_bytes() });
+            let _ = on_event.send(PtyEvent::Exit { code: -1 });
+        };
+
+        let sess = match connect(&app, &pane_id, &cfg) {
+            Ok(s) => s,
+            Err(e) => {
+                fail(&on_event, e);
+                terms.lock().unwrap().remove(&pane_id);
+                return;
+            }
+        };
+        let mut ch = match sess
+            .channel_session()
+            .and_then(|mut ch| {
+                ch.request_pty("xterm-256color", None, Some((cols as u32, rows as u32, 0, 0)))?;
+                ch.shell()?;
+                Ok(ch)
+            }) {
+            Ok(ch) => ch,
+            Err(e) => {
+                fail(&on_event, format!("mở shell từ xa lỗi: {e}"));
+                terms.lock().unwrap().remove(&pane_id);
+                return;
+            }
+        };
+
+        if let Some(c) = command {
+            if !c.trim().is_empty() {
+                let _ = ch.write_all(format!("{c}\n").as_bytes());
+                let _ = ch.flush();
+            }
+        }
+
+        sess.set_blocking(false);
+
         let mut buf = [0u8; 8192];
         let mut pending: Vec<u8> = Vec::new();
         'outer: loop {
@@ -335,23 +368,29 @@ fn get_sftp(state: &tauri::State<SshManager>, pane_id: &str) -> Result<Arc<Mutex
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn sftp_connect(
+pub async fn sftp_connect(
     app: AppHandle,
-    state: tauri::State<SshManager>,
+    state: tauri::State<'_, SshManager>,
     pane_id: String,
     cfg: SshConfig,
 ) -> Result<(), String> {
     if state.sftps.lock().unwrap().contains_key(&pane_id) {
         return Ok(());
     }
-    let sess = connect(&app, &pane_id, &cfg)?;
-    let sftp = sess.sftp().map_err(|e| format!("mở SFTP lỗi: {e}"))?;
-    state
-        .sftps
-        .lock()
-        .unwrap()
-        .insert(pane_id, Arc::new(Mutex::new(SftpConn { _sess: sess, sftp })));
-    Ok(())
+    // Connect (blocking TCP + handshake) off the command thread so an unreachable
+    // host can't freeze the UI; the frontend awaits the returned Result as before.
+    let sftps = state.sftps.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let sess = connect(&app, &pane_id, &cfg)?;
+        let sftp = sess.sftp().map_err(|e| format!("mở SFTP lỗi: {e}"))?;
+        sftps
+            .lock()
+            .unwrap()
+            .insert(pane_id, Arc::new(Mutex::new(SftpConn { _sess: sess, sftp })));
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command(rename_all = "camelCase")]

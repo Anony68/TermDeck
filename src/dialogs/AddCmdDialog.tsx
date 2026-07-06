@@ -4,15 +4,16 @@ import { SHELL_ORDER, SHELLS } from '../shells';
 import { pickFolder, pickFile } from '../ipc/api';
 import { secretSet } from '../ipc/ssh';
 import { ShellBadge } from '../components/ShellBadge';
+import { useT, type TKey } from '../i18n';
 import type { PaneKind, ShellKind, SshConfig } from '../types';
 
 const uid = () =>
   Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
 
-const KINDS: Array<{ kind: PaneKind; label: string; badge: string; color: string; hint: string }> = [
-  { kind: 'shell', label: 'Shell cục bộ', badge: '>_', color: 'var(--sh-cmd)', hint: 'PowerShell, CMD, Git Bash, WSL' },
-  { kind: 'ssh', label: 'SSH', badge: 'SSH', color: 'var(--sh-wsl)', hint: 'Terminal tới máy chủ từ xa' },
-  { kind: 'browser', label: 'Quản lý File', badge: 'FB', color: 'var(--sh-ps)', hint: 'Duyệt & truyền file (local/SFTP)' },
+const KINDS: Array<{ kind: PaneKind; labelKey: TKey; badge: string; color: string; hintKey: TKey }> = [
+  { kind: 'shell', labelKey: 'dlg.kindShell', badge: '>_', color: 'var(--sh-cmd)', hintKey: 'dlg.kindShellHint' },
+  { kind: 'ssh', labelKey: 'dlg.kindSsh', badge: 'SSH', color: 'var(--sh-wsl)', hintKey: 'dlg.kindSshHint' },
+  { kind: 'browser', labelKey: 'dlg.kindBrowser', badge: 'FB', color: 'var(--sh-ps)', hintKey: 'dlg.kindBrowserHint' },
 ];
 
 export function AddCmdDialog() {
@@ -27,6 +28,7 @@ export function AddCmdDialog() {
   const addProject = useStore((s) => s.addProject);
   const closeAddCmd = useStore((s) => s.closeAddCmd);
   const closeEditCmd = useStore((s) => s.closeEditCmd);
+  const t = useT();
 
   const editing = !!editPaneId;
   const close = editing ? closeEditCmd : closeAddCmd;
@@ -73,18 +75,18 @@ export function AddCmdDialog() {
 
   const defaultName = () => {
     if (kind === 'ssh') return user && host ? `${user}@${host}` : 'SSH';
-    if (kind === 'browser') return host ? `Files — ${host}` : 'Quản lý File';
+    if (kind === 'browser') return host ? `Files — ${host}` : t('dlg.kindBrowser');
     return SHELLS[shell].label;
   };
 
   const submit = async () => {
     setError(null);
     if (isRemote) {
-      if (!host.trim()) return setError('Nhập địa chỉ máy chủ (IP hoặc hostname).');
-      if (!user.trim()) return setError('Nhập tên đăng nhập (username).');
+      if (!host.trim()) return setError(t('dlg.errHost'));
+      if (!user.trim()) return setError(t('dlg.errUser'));
       const p = parseInt(port, 10);
-      if (!p || p < 1 || p > 65535) return setError('Cổng (port) không hợp lệ.');
-      if (auth === 'key' && !keyPath.trim()) return setError('Chọn file private key (.pem).');
+      if (!p || p < 1 || p > 65535) return setError(t('dlg.errPort'));
+      if (auth === 'key' && !keyPath.trim()) return setError(t('dlg.errKey'));
     }
 
     const finalName = name.trim() || defaultName();
@@ -158,7 +160,7 @@ export function AddCmdDialog() {
       >
         <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px 0' }}>
           <span style={{ font: '600 15px var(--font-ui)', color: 'var(--text)', flex: 1 }}>
-            {editing ? 'Cài đặt' : 'Thêm mới'}
+            {editing ? t('dlg.editTitle') : t('dlg.addTitle')}
           </span>
           <span className="icon-btn" onClick={close} style={{ width: 24, height: 24, fontSize: 13 }}>
             ✕
@@ -166,7 +168,7 @@ export function AddCmdDialog() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '18px 20px' }}>
-          <Field label="LOẠI">
+          <Field label={t('dlg.kind')}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
               {KINDS.map((k) => {
                 const selected = kind === k.kind;
@@ -175,7 +177,7 @@ export function AddCmdDialog() {
                     key={k.kind}
                     className={`shell-card${selected ? ' selected' : ''}`}
                     onClick={() => setKind(k.kind)}
-                    title={k.hint}
+                    title={t(k.hintKey)}
                     style={{ gap: 6 }}
                   >
                     <div
@@ -201,7 +203,7 @@ export function AddCmdDialog() {
                         textAlign: 'center',
                       }}
                     >
-                      {k.label}
+                      {t(k.labelKey)}
                     </span>
                   </div>
                 );
@@ -209,7 +211,7 @@ export function AddCmdDialog() {
             </div>
           </Field>
 
-          <Field label="TÊN HIỂN THỊ">
+          <Field label={t('dlg.displayName')}>
             <input
               className="field"
               autoFocus
@@ -221,7 +223,7 @@ export function AddCmdDialog() {
           </Field>
 
           {kind === 'shell' && (
-            <Field label="LOẠI SHELL">
+            <Field label={t('dlg.shellKind')}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
                 {SHELL_ORDER.map((k) => {
                   const enabled = avail(k);
@@ -231,7 +233,7 @@ export function AddCmdDialog() {
                       key={k}
                       className={`shell-card${selected ? ' selected' : ''}${enabled ? '' : ' disabled'}`}
                       onClick={() => enabled && setShell(k)}
-                      title={enabled ? SHELLS[k].label : `${SHELLS[k].label} — không tìm thấy trên máy`}
+                      title={enabled ? SHELLS[k].label : t('dlg.shellNotFound', { label: SHELLS[k].label })}
                     >
                       <ShellBadge shell={k} size={24} />
                       <span
@@ -253,7 +255,7 @@ export function AddCmdDialog() {
             <>
               <div style={{ display: 'flex', gap: 10 }}>
                 <div style={{ flex: 1 }}>
-                  <Field label="MÁY CHỦ (IP / HOSTNAME)">
+                  <Field label={t('dlg.host')}>
                     <input
                       className="field mono"
                       placeholder="VD: 192.168.1.10"
@@ -263,7 +265,7 @@ export function AddCmdDialog() {
                   </Field>
                 </div>
                 <div style={{ width: 96 }}>
-                  <Field label="CỔNG">
+                  <Field label={t('dlg.port')}>
                     <input
                       className="field mono"
                       placeholder="22"
@@ -274,7 +276,7 @@ export function AddCmdDialog() {
                 </div>
               </div>
 
-              <Field label="TÊN ĐĂNG NHẬP">
+              <Field label={t('dlg.username')}>
                 <input
                   className="field mono"
                   placeholder="VD: root"
@@ -283,20 +285,20 @@ export function AddCmdDialog() {
                 />
               </Field>
 
-              <Field label="XÁC THỰC">
+              <Field label={t('dlg.auth')}>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 2 }}>
                   <SegBtn active={auth === 'password'} onClick={() => setAuth('password')}>
-                    Mật khẩu
+                    {t('dlg.authPassword')}
                   </SegBtn>
                   <SegBtn active={auth === 'key'} onClick={() => setAuth('key')}>
-                    Private Key (.pem)
+                    {t('dlg.authKey')}
                   </SegBtn>
                 </div>
                 {auth === 'password' ? (
                   <input
                     className="field mono"
                     type="password"
-                    placeholder={editing ? '•••••• (để trống = giữ nguyên)' : 'Mật khẩu'}
+                    placeholder={editing ? t('dlg.passwordKeep') : t('dlg.password')}
                     value={secret}
                     onChange={(e) => setSecret(e.target.value)}
                   />
@@ -305,7 +307,7 @@ export function AddCmdDialog() {
                     <div style={{ display: 'flex', gap: 8 }}>
                       <input
                         className="field mono"
-                        placeholder="Đường dẫn file key"
+                        placeholder={t('dlg.keyPath')}
                         value={keyPath}
                         onChange={(e) => setKeyPath(e.target.value)}
                       />
@@ -317,15 +319,13 @@ export function AddCmdDialog() {
                           if (f) setKeyPath(f);
                         }}
                       >
-                        Chọn…
+                        {t('common.choose')}
                       </button>
                     </div>
                     <input
                       className="field mono"
                       type="password"
-                      placeholder={
-                        editing ? 'Passphrase (để trống = giữ nguyên/không có)' : 'Passphrase (nếu key có)'
-                      }
+                      placeholder={editing ? t('dlg.passphraseKeep') : t('dlg.passphrase')}
                       value={secret}
                       onChange={(e) => setSecret(e.target.value)}
                       style={{ marginTop: 6 }}
@@ -337,8 +337,8 @@ export function AddCmdDialog() {
               <Field
                 label={
                   <>
-                    THƯ MỤC TỪ XA{' '}
-                    <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(tùy chọn)</span>
+                    {t('dlg.remoteDir')}{' '}
+                    <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>{t('common.optional')}</span>
                   </>
                 }
               >
@@ -353,11 +353,11 @@ export function AddCmdDialog() {
           )}
 
           {kind === 'shell' && (
-            <Field label="ĐƯỜNG DẪN KHỞI ĐỘNG">
+            <Field label={t('dlg.startDir')}>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
                   className="field mono"
-                  placeholder="VD: D:\work\api"
+                  placeholder={t('dlg.startPath')}
                   value={cwd}
                   onChange={(e) => setCwd(e.target.value)}
                 />
@@ -369,7 +369,7 @@ export function AddCmdDialog() {
                     if (picked) setCwd(picked);
                   }}
                 >
-                  Chọn…
+                  {t('common.choose')}
                 </button>
               </div>
             </Field>
@@ -379,14 +379,14 @@ export function AddCmdDialog() {
             <Field
               label={
                 <>
-                  LỆNH CHẠY SẴN{' '}
-                  <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(tùy chọn)</span>
+                  {t('dlg.presetCmd')}{' '}
+                  <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>{t('common.optional')}</span>
                 </>
               }
             >
               <input
                 className="field mono"
-                placeholder={kind === 'ssh' ? 'VD: htop' : 'VD: npm run dev'}
+                placeholder={kind === 'ssh' ? t('dlg.presetSsh') : t('dlg.presetShell')}
                 value={presetCommand}
                 onChange={(e) => setPresetCommand(e.target.value)}
               />
@@ -396,7 +396,7 @@ export function AddCmdDialog() {
           <Field
             label={
               <>
-                DỰ ÁN <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(tùy chọn)</span>
+                {t('dlg.project')} <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>{t('common.optional')}</span>
               </>
             }
           >
@@ -406,18 +406,18 @@ export function AddCmdDialog() {
               onChange={(e) => onProjectChange(e.target.value)}
               style={{ cursor: 'pointer' }}
             >
-              <option value="">(Không thuộc dự án)</option>
+              <option value="">{t('dlg.projectNone')}</option>
               {projects.map((pr) => (
                 <option key={pr.id} value={pr.id}>
                   {pr.name}
                 </option>
               ))}
-              <option value="__new__">＋ Tạo dự án mới…</option>
+              <option value="__new__">{t('dlg.projectNew')}</option>
             </select>
             {creatingNew && (
               <input
                 className="field"
-                placeholder="Tên dự án mới"
+                placeholder={t('dlg.projectNewName')}
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
                 style={{ marginTop: 6 }}
@@ -427,7 +427,7 @@ export function AddCmdDialog() {
 
           {kind !== 'browser' && (
             <Row
-              label="Tự mở lại khi khởi động ứng dụng"
+              label={t('dlg.autostart')}
               on={autoStart}
               onToggle={() => setAutoStart((v) => !v)}
             />
@@ -451,10 +451,10 @@ export function AddCmdDialog() {
           }}
         >
           <button className="ghost-btn" onClick={close} style={{ padding: '8px 18px', fontSize: 12.5 }}>
-            Hủy
+            {t('common.cancel')}
           </button>
           <button className="accent-btn" style={{ padding: '8px 18px', fontSize: 12.5 }} onClick={submit}>
-            {editing ? 'Lưu thay đổi' : 'Thêm vào tab'}
+            {editing ? t('dlg.save') : t('dlg.addToTab')}
           </button>
         </div>
       </div>
