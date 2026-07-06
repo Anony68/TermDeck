@@ -78,7 +78,7 @@ export function Toolbar() {
       <div
         className="icon-btn"
         title={t('toolbar.settings')}
-        onClick={openSettings}
+        onClick={() => openSettings()}
         style={{ width: 30, height: 30, fontSize: 14 }}
       >
         ⚙

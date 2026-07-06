@@ -3,6 +3,7 @@ import { useStore, activeTabSelector, displayItems } from '../state/store';
 import { LAYOUTS, fitLayout } from '../layouts';
 import { SAVED_DND_MIME } from '../dnd';
 import { Pane } from './Pane';
+import { useT } from '../i18n';
 
 export function Grid() {
   const tab = useStore(activeTabSelector);
@@ -11,6 +12,7 @@ export function Grid() {
   const showPaneInTab = useStore((s) => s.showPaneInTab);
   const movePaneToSlot = useStore((s) => s.movePaneToSlot);
   const [dragSlot, setDragSlot] = useState<number | null>(null);
+  const t = useT();
 
   if (!tab) return null;
   // This tab shows its own referenced cmds + any pinned cmds; grid grows to fit them.
@@ -79,9 +81,7 @@ export function Grid() {
                 }}
               >
                 <span style={{ fontSize: 20 }}>＋</span>
-                <span style={{ font: '400 11px var(--font-ui)' }}>
-                  Ô trống — thêm cmd hoặc kéo từ danh sách
-                </span>
+                <span style={{ font: '400 11px var(--font-ui)' }}>{t('grid.emptySlot')}</span>
               </button>
             )}
           </div>

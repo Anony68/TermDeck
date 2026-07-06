@@ -38,6 +38,18 @@ export interface TransferHooks {
   onProgress?: (done: number, total: number) => void;
   /** Polled before each file; return true to stop the batch (user hit cancel). */
   shouldCancel?: () => boolean;
+  /** Polled before each file; while true the batch holds (user hit pause). */
+  shouldPause?: () => boolean;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Block while paused, checking cancel so a paused batch can still be cancelled. */
+export async function pauseGate(hooks: {
+  shouldPause?: () => boolean;
+  shouldCancel?: () => boolean;
+}): Promise<void> {
+  while (hooks.shouldPause?.() && !hooks.shouldCancel?.()) await sleep(150);
 }
 
 function splitPath(p: string, sep: string): { dir: string; name: string } {
@@ -107,6 +119,7 @@ export async function runTransfer(
   };
 
   for (const job of jobs) {
+    await pauseGate(hooks);
     if (cancelled || hooks.shouldCancel?.()) {
       cancelled = true;
       break;

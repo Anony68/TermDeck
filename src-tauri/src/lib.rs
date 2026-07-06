@@ -1,3 +1,4 @@
+mod claude;
 mod pty;
 mod shells;
 mod ssh;
@@ -177,6 +178,8 @@ pub fn run() {
             save_text,
             read_text,
             download_and_run,
+            claude::claude_session,
+            claude::claude_sessions,
             ssh::spawn_ssh,
             ssh::write_ssh,
             ssh::resize_ssh,
@@ -189,13 +192,16 @@ pub fn run() {
             ssh::sftp_mkdir,
             ssh::sftp_rename,
             ssh::sftp_remove,
+            ssh::sftp_chmod,
+            ssh::sftp_search,
             ssh::sftp_upload,
             ssh::sftp_download,
             ssh::fs_list,
             ssh::fs_mkdir,
             ssh::fs_rename,
             ssh::fs_remove,
-            ssh::fs_home
+            ssh::fs_home,
+            ssh::ssh_config_hosts
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -13,6 +13,8 @@ import {
   sftpMkdir,
   sftpRename,
   sftpRemove,
+  sftpChmod,
+  sftpSearch,
   sftpUpload,
   sftpDownload,
   onSftpProgress,
@@ -24,7 +26,18 @@ import {
   type TransferOps,
   type TransferSummary,
 } from './transfer';
-import { planSync, runSync, type SyncOps, type SyncPlan, type SyncSummary } from './sync';
+import {
+  planSync,
+  runSync,
+  planBiSync,
+  runBiSync,
+  type SyncOps,
+  type SyncPlan,
+  type SyncSummary,
+  type BiSyncOps,
+  type BiSyncPlan,
+  type BiSyncSummary,
+} from './sync';
 import { IS_TAURI } from '../ipc/env';
 import { useT } from '../i18n';
 
@@ -53,6 +66,8 @@ export function FileBrowser({ pane }: { pane: Pane }) {
     { plan: SyncPlan; src: string; dst: string; ops: SyncOps; dir: SyncDir } | null
   >(null);
   const [syncSummary, setSyncSummary] = useState<(SyncSummary & { dir: SyncDir }) | null>(null);
+  const [biPlan, setBiPlan] = useState<{ plan: BiSyncPlan; local: string; remote: string } | null>(null);
+  const [biSummary, setBiSummary] = useState<BiSyncSummary | null>(null);
   const [localHome, setLocalHome] = useState<string | null>(null);
   const [leftKey, setLeftKey] = useState(0);
   const [rightKey, setRightKey] = useState(0);
@@ -64,6 +79,12 @@ export function FileBrowser({ pane }: { pane: Pane }) {
   const conflictResolve = useRef<((a: ConflictAction) => void) | null>(null);
   // Set true to abort the running transfer batch before the next file.
   const cancelRef = useRef(false);
+  // While true the batch holds between files (pause/resume).
+  const pausedRef = useRef(false);
+  const [paused, setPaused] = useState(false);
+  // OS drag-and-drop (C3): upload files dropped from Explorer onto the pane.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => {
     void fsHome().then((h) => setLocalHome(h || ''));
@@ -108,6 +129,8 @@ export function FileBrowser({ pane }: { pane: Pane }) {
       mkdir: (p) => sftpMkdir(pane.id, p),
       rename: (f, t) => sftpRename(pane.id, f, t),
       remove: (p, d) => sftpRemove(pane.id, p, d),
+      chmod: (p, m) => sftpChmod(pane.id, p, m),
+      search: (root, q) => sftpSearch(pane.id, root, q),
       sep: '/',
     }),
     [pane.id]
@@ -168,12 +191,15 @@ export function FileBrowser({ pane }: { pane: Pane }) {
     setBusy(true);
     setSummary(null);
     cancelRef.current = false;
+    pausedRef.current = false;
+    setPaused(false);
     setBatch({ done: 0, total: entries.length, verb });
     try {
       const result = await runTransfer(entries, fromDir, toDir, ops, {
         onConflict: askConflict,
         onProgress: (done, total) => setBatch({ done, total, verb }),
         shouldCancel: () => cancelRef.current,
+        shouldPause: () => pausedRef.current,
       });
       setSummary({ ...result, verb });
     } catch (e) {
@@ -191,6 +217,66 @@ export function FileBrowser({ pane }: { pane: Pane }) {
     void runBatch(entries, fromLocal, remoteCwd.current, uploadOps, t('fb.verbUpload'));
   const onDownload = (entries: FileEntry[], fromRemote: string) =>
     void runBatch(entries, fromRemote, localCwd.current, downloadOps, t('fb.verbDownload'));
+
+  // Upload files dropped from the OS file explorer onto this pane (grouped by
+  // their source folder so the transfer engine's recursion + conflict handling
+  // are reused). Directories drop in whole.
+  const onExternalDrop = async (paths: string[]) => {
+    if (!hasRemote || conn !== 'ready') return;
+    const byParent = new Map<string, string[]>();
+    for (const p of paths) {
+      const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
+      if (i < 0) continue;
+      const dir = p.slice(0, i);
+      const name = p.slice(i + 1);
+      const arr = byParent.get(dir) ?? [];
+      arr.push(name);
+      byParent.set(dir, arr);
+    }
+    for (const [dir, names] of byParent) {
+      const all = await fsList(dir).catch(() => [] as FileEntry[]);
+      const entries = all.filter((e) => names.includes(e.name));
+      if (entries.length) await runBatch(entries, dir, remoteCwd.current, uploadOps, t('fb.verbUpload'));
+    }
+  };
+
+  // Subscribe to the webview's drag-drop; each pane handles drops within its rect.
+  useEffect(() => {
+    if (!IS_TAURI || !hasRemote) return;
+    let alive = true;
+    let un: (() => void) | null = null;
+    const inRoot = (pos: { x: number; y: number }): boolean => {
+      const el = rootRef.current;
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const x = pos.x / dpr;
+      const y = pos.y / dpr;
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    };
+    void import('@tauri-apps/api/webview')
+      .then(({ getCurrentWebview }) =>
+        getCurrentWebview().onDragDropEvent((e) => {
+          const p = e.payload;
+          if (p.type === 'over') setDragOver(inRoot(p.position));
+          else if (p.type === 'leave') setDragOver(false);
+          else if (p.type === 'drop') {
+            const over = inRoot(p.position);
+            setDragOver(false);
+            if (over) void onExternalDrop(p.paths);
+          }
+        })
+      )
+      .then((fn) => {
+        if (alive) un = fn;
+        else fn();
+      });
+    return () => {
+      alive = false;
+      un?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasRemote, conn]);
 
   // One-way mirror ops for each direction. 'up' = local ▶ remote (upload),
   // 'down' = remote ▶ local (download). Both delete extras on the target.
@@ -231,17 +317,76 @@ export function FileBrowser({ pane }: { pane: Pane }) {
       setPlanning(false);
     }
   };
+  // Two-way sync (C5): newer-wins merge, no deletions.
+  const biSyncOps: BiSyncOps = {
+    localList: fsList,
+    remoteList: (d) => sftpList(pane.id, d),
+    localMkdir: fsMkdir,
+    remoteMkdir: (d) => sftpMkdir(pane.id, d),
+    upload: (l, r) => sftpUpload(pane.id, l, r),
+    download: (r, l) => sftpDownload(pane.id, r, l),
+    localSep: '\\',
+    remoteSep: '/',
+  };
+  const onBiSyncClick = async () => {
+    if (planning || busy) return;
+    const local = localCwd.current;
+    const remote = remoteCwd.current;
+    if (!local || !remote) return;
+    setPlanning(true);
+    setSummary(null);
+    setSyncSummary(null);
+    setBiSummary(null);
+    try {
+      const plan = await planBiSync(local, remote, biSyncOps);
+      setBiPlan({ plan, local, remote });
+    } catch (e) {
+      alert(t('sync.errPlan', { err: String(e) }));
+    } finally {
+      setPlanning(false);
+    }
+  };
+  const runBiSyncNow = async () => {
+    if (!biPlan) return;
+    const { plan, local, remote } = biPlan;
+    setBiPlan(null);
+    setBusy(true);
+    cancelRef.current = false;
+    pausedRef.current = false;
+    setPaused(false);
+    setBatch({ done: 0, total: plan.uploads.length + plan.downloads.length, verb: t('fb.verbSync') });
+    try {
+      const result = await runBiSync(local, remote, plan, biSyncOps, {
+        onProgress: (done, total) => setBatch({ done, total, verb: t('fb.verbSync') }),
+        shouldCancel: () => cancelRef.current,
+        shouldPause: () => pausedRef.current,
+      });
+      setBiSummary(result);
+    } catch (e) {
+      alert(t('sync.errRun', { err: String(e) }));
+    } finally {
+      setBusy(false);
+      setBatch(null);
+      setProgress(null);
+      setLeftKey((k) => k + 1);
+      setRightKey((k) => k + 1);
+    }
+  };
+
   const runSyncNow = async () => {
     if (!syncPlan) return;
     const { plan, src, dst, ops, dir } = syncPlan;
     setSyncPlan(null);
     setBusy(true);
     cancelRef.current = false;
+    pausedRef.current = false;
+    setPaused(false);
     setBatch({ done: 0, total: plan.uploads.length, verb: t('fb.verbSync') });
     try {
       const result = await runSync(src, dst, plan, ops, {
         onProgress: (done, total) => setBatch({ done, total, verb: t('fb.verbSync') }),
         shouldCancel: () => cancelRef.current,
+        shouldPause: () => pausedRef.current,
       });
       setSyncSummary({ ...result, dir });
     } catch (e) {
@@ -267,7 +412,29 @@ export function FileBrowser({ pane }: { pane: Pane }) {
   const initialLocal = pane.browserLocalPath ?? localHome;
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, position: 'relative' }}>
+    <div
+      ref={rootRef}
+      style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, position: 'relative' }}
+    >
+      {dragOver && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 30,
+            pointerEvents: 'none',
+            display: 'grid',
+            placeItems: 'center',
+            background: 'var(--accent-soft)',
+            border: '2px dashed var(--accent)',
+            borderRadius: 8,
+            font: '700 14px var(--font-ui)',
+            color: 'var(--accent)',
+          }}
+        >
+          {t('fb.dropUpload')}
+        </div>
+      )}
       <div style={{ flex: 1, display: 'flex', minHeight: 0, minWidth: 0 }}>
         {initialLocal !== null && (
           <FilePanel
@@ -360,9 +527,15 @@ export function FileBrowser({ pane }: { pane: Pane }) {
           color: 'var(--text-muted)',
         }}
       >
+        {hasRemote && conn === 'ready' && !busy && !planning && (
+          <button className="fb-sync-btn" style={{ flex: 'none' }} onClick={onBiSyncClick}>
+            {t('sync.biBtn')}
+          </button>
+        )}
         {busy ? (
           <>
-            <span style={{ color: 'var(--accent)', whiteSpace: 'nowrap' }}>
+            <span style={{ color: paused ? 'var(--warn)' : 'var(--accent)', whiteSpace: 'nowrap' }}>
+              {paused ? `⏸ ${t('fb.paused')} · ` : ''}
               {batch?.verb ?? t('fb.transferring')} {batch ? `${batch.done}/${batch.total}` : ''}
               {progress ? ` · ${progress.name}` : '…'}
             </span>
@@ -394,7 +567,16 @@ export function FileBrowser({ pane }: { pane: Pane }) {
             )}
             <button
               className="fb-cancel"
-              style={{ marginLeft: 'auto' }}
+              style={{ marginLeft: 'auto', borderColor: 'var(--warn)', color: 'var(--warn)' }}
+              onClick={() => {
+                pausedRef.current = !pausedRef.current;
+                setPaused(pausedRef.current);
+              }}
+            >
+              {paused ? t('fb.resumeBtn') : t('fb.pauseBtn')}
+            </button>
+            <button
+              className="fb-cancel"
               title={t('fb.cancelTip')}
               onClick={() => (cancelRef.current = true)}
             >
@@ -403,6 +585,13 @@ export function FileBrowser({ pane }: { pane: Pane }) {
           </>
         ) : planning ? (
           <span style={{ color: 'var(--accent)' }}>{t('fb.analyzing')}</span>
+        ) : biSummary ? (
+          <span style={{ color: biSummary.cancelled ? 'var(--warn)' : 'var(--accent)' }}>
+            {biSummary.cancelled ? t('fb.syncCancelled') : ''}
+            {t('sync.biDone', { up: biSummary.uploaded, down: biSummary.downloaded })}
+            {biSummary.unchanged > 0 && ` · ${t('fb.syncKept', { n: biSummary.unchanged })}`}
+            {biSummary.failed > 0 && ` · ${t('fb.errN', { n: biSummary.failed })}`}
+          </span>
         ) : syncSummary ? (
           <span style={{ color: syncSummary.cancelled ? 'var(--warn)' : 'var(--accent)' }}>
             {syncSummary.cancelled ? t('fb.syncCancelled') : t('fb.syncDone')}
@@ -433,6 +622,90 @@ export function FileBrowser({ pane }: { pane: Pane }) {
           onConfirm={() => void runSyncNow()}
         />
       )}
+
+      {biPlan && (
+        <BiSyncConfirm
+          info={biPlan}
+          onCancel={() => setBiPlan(null)}
+          onConfirm={() => void runBiSyncNow()}
+        />
+      )}
+    </div>
+  );
+}
+
+function BiSyncConfirm({
+  info,
+  onCancel,
+  onConfirm,
+}: {
+  info: { plan: BiSyncPlan; local: string; remote: string };
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useT();
+  const { plan, local, remote } = info;
+  const nothing = plan.uploads.length === 0 && plan.downloads.length === 0;
+  return (
+    <div
+      onMouseDown={onCancel}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'rgba(5,7,10,0.55)',
+        display: 'grid',
+        placeItems: 'center',
+        zIndex: 46,
+      }}
+    >
+      <div
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{
+          width: 430,
+          background: 'var(--surface-2)',
+          border: '1px solid var(--border-3)',
+          borderRadius: 12,
+          boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+          padding: 20,
+        }}
+      >
+        <div style={{ font: '600 14px var(--font-ui)', color: 'var(--text)', marginBottom: 10 }}>
+          {t('sync.biTitle')}
+        </div>
+        <div style={{ font: '400 11px var(--font-mono)', color: 'var(--text-2)', marginBottom: 14, lineHeight: 1.6, wordBreak: 'break-all' }}>
+          <div>
+            <span style={{ color: 'var(--sh-ps)' }}>Local:</span> {local}
+          </div>
+          <div>
+            <span style={{ color: 'var(--accent)' }}>Remote:</span> {remote}
+          </div>
+        </div>
+        {nothing ? (
+          <div style={{ font: '400 12px var(--font-ui)', color: 'var(--text-2)', marginBottom: 16 }}>
+            {t('sync.nothing')}
+          </div>
+        ) : (
+          <ul style={{ margin: '0 0 16px', paddingLeft: 18, font: '400 12px var(--font-ui)', color: 'var(--text-2)', lineHeight: 1.6 }}>
+            {plan.uploads.length > 0 && (
+              <li style={{ color: 'var(--sh-ps)' }}>{t('sync.biUp', { n: plan.uploads.length })}</li>
+            )}
+            {plan.downloads.length > 0 && (
+              <li style={{ color: 'var(--accent)' }}>{t('sync.biDown', { n: plan.downloads.length })}</li>
+            )}
+            <li style={{ color: 'var(--text-muted)' }}>{t('sync.willKeep', { n: plan.unchanged })}</li>
+          </ul>
+        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="ghost-btn" style={{ flex: 1, height: 36, justifyContent: 'center' }} onClick={onCancel}>
+            {nothing ? t('sync.close') : t('common.cancel')}
+          </button>
+          {!nothing && (
+            <button className="accent-btn" style={{ flex: 1, height: 36, justifyContent: 'center' }} onClick={onConfirm}>
+              {t('sync.run')}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

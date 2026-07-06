@@ -47,6 +47,38 @@ export function killSsh(paneId: string): void {
   void invoke('kill_ssh', { paneId });
 }
 
+export interface SshStatus {
+  paneId: string;
+  /** "connected" | "reconnecting" | "disconnected" */
+  state: string;
+  attempt: number;
+}
+
+/** Subscribe to SSH connection health/reconnect events. */
+export async function onSshStatus(cb: (s: SshStatus) => void): Promise<() => void> {
+  if (!IS_TAURI) return () => {};
+  const { listen } = await import('@tauri-apps/api/event');
+  return listen<SshStatus>('ssh://status', (e) => cb(e.payload));
+}
+
+export interface SshConfigHost {
+  alias: string;
+  hostName: string;
+  user: string;
+  port: number;
+  identityFile: string;
+}
+
+/** Parse the user's ~/.ssh/config into concrete hosts (for the New-SSH dialog). */
+export async function sshConfigHosts(): Promise<SshConfigHost[]> {
+  if (!IS_TAURI) return [];
+  try {
+    return await invoke<SshConfigHost[]>('ssh_config_hosts');
+  } catch {
+    return [];
+  }
+}
+
 /** Save (or clear with '') the password/passphrase for a pane in the OS credential store. */
 export async function secretSet(paneId: string, value: string): Promise<void> {
   if (!IS_TAURI) return;
@@ -67,6 +99,9 @@ export interface FileEntry {
   /** Unix seconds, 0 = unknown. */
   modified: number;
   perms: string;
+  /** Unix permission bits (remote only; 0 for local). */
+  mode: number;
+  isSymlink: boolean;
 }
 
 export interface TransferProgress {
@@ -94,6 +129,17 @@ export async function sftpRename(paneId: string, from: string, to: string): Prom
 }
 export async function sftpRemove(paneId: string, path: string, isDir: boolean): Promise<void> {
   await invoke('sftp_remove', { paneId, path, isDir });
+}
+export async function sftpChmod(paneId: string, path: string, mode: number): Promise<void> {
+  await invoke('sftp_chmod', { paneId, path, mode });
+}
+export interface SearchHit {
+  path: string;
+  name: string;
+  isDir: boolean;
+}
+export async function sftpSearch(paneId: string, root: string, query: string): Promise<SearchHit[]> {
+  return await invoke('sftp_search', { paneId, root, query });
 }
 export async function sftpUpload(paneId: string, local: string, remote: string): Promise<void> {
   await invoke('sftp_upload', { paneId, local, remote });

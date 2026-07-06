@@ -7,8 +7,10 @@ import { useNow } from '../useNow';
 import { PaneBadge } from './ShellBadge';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { ClaudeIcon } from './ClaudeIcon';
+import { ClaudePanel } from './ClaudePanel';
+import { ClaudeSessionsDialog } from './ClaudeSessionsDialog';
 import { FileBrowser } from './FileBrowser';
-import { writePty } from '../ipc/pty';
+import { writeSession } from '../ipc/session';
 import { useT } from '../i18n';
 
 function fmtUptime(ms: number): string {
@@ -37,6 +39,8 @@ export function Pane({ pane }: { pane: PaneModel }) {
   const openEditCmd = useStore((s) => s.openEditCmd);
   const togglePinPane = useStore((s) => s.togglePinPane);
   const stat = useStore((s) => s.stats[pane.id]);
+  const claudeSession = useStore((s) => s.claudeSessions[pane.id]);
+  const sshStatus = useStore((s) => s.sshStatus[pane.id]);
   const setSlot = useSlots((s) => s.setSlot);
   const now = useNow();
   const t = useT();
@@ -45,6 +49,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
   const [draft, setDraft] = useState(pane.name);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [claudeMenu, setClaudeMenu] = useState<{ x: number; y: number } | null>(null);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
 
   // Stable ref so the terminal only re-parents on mount/unmount, not every render.
   const slotRef = useCallback(
@@ -63,13 +68,14 @@ export function Pane({ pane }: { pane: PaneModel }) {
   const isBrowser = kind === 'browser';
   const claudeRunning = status === 'running' && !!stat?.claude;
   const claudeBusy = claudeRunning && !!stat?.busy;
+  const claudeWaiting = claudeRunning && !claudeBusy && !!claudeSession?.waitingForInput;
 
-  /** Type a command into the pane's PTY, then press Enter after a short pause
-   *  (the pause lets Claude's TUI settle before the submit keystroke). */
+  /** Type a command into the pane (local PTY or SSH), then press Enter after a
+   *  short pause (lets Claude's TUI settle before the submit keystroke). */
   const typeCommand = (text: string) => {
     setFocusedPane(pane.id);
-    writePty(pane.id, text);
-    window.setTimeout(() => writePty(pane.id, '\r'), 160);
+    writeSession(pane, text);
+    window.setTimeout(() => writeSession(pane, '\r'), 160);
   };
 
   const claudeItems: MenuItem[] = claudeRunning
@@ -81,13 +87,13 @@ export function Pane({ pane }: { pane: PaneModel }) {
         { label: t('claude.clear'), onClick: () => typeCommand('/clear') },
         { label: t('claude.cost'), onClick: () => typeCommand('/cost') },
         { label: '', separator: true },
-        { label: t('claude.esc'), onClick: () => writePty(pane.id, '\x1b') },
+        { label: t('claude.esc'), onClick: () => writeSession(pane, '\x1b') },
         {
           label: t('claude.quit'),
           danger: true,
           onClick: () => {
-            writePty(pane.id, '\x03');
-            window.setTimeout(() => writePty(pane.id, '\x03'), 250);
+            writeSession(pane, '\x03');
+            window.setTimeout(() => writeSession(pane, '\x03'), 250);
           },
         },
       ]
@@ -102,6 +108,11 @@ export function Pane({ pane }: { pane: PaneModel }) {
           label: t('claude.pick'),
           disabled: status !== 'running',
           onClick: () => typeCommand('claude -r'),
+        },
+        {
+          label: t('claude.browse'),
+          disabled: status !== 'running' || !pane.cwd,
+          onClick: () => setSessionsOpen(true),
         },
         {
           label: t('claude.danger'),
@@ -190,8 +201,15 @@ export function Pane({ pane }: { pane: PaneModel }) {
         {claudeRunning && (
           <ClaudeIcon
             size={13}
-            className={claudeBusy ? 'claude-pulse' : undefined}
-            title={claudeBusy ? t('pane.claudeBusyTip') : t('pane.claudeIdleTip')}
+            color={claudeWaiting ? 'var(--warn)' : undefined}
+            className={claudeBusy ? 'claude-pulse' : claudeWaiting ? 'claude-attn' : undefined}
+            title={
+              claudeWaiting
+                ? t('claude.needAttention')
+                : claudeBusy
+                  ? t('pane.claudeBusyTip')
+                  : t('pane.claudeIdleTip')
+            }
           />
         )}
         <span
@@ -208,6 +226,14 @@ export function Pane({ pane }: { pane: PaneModel }) {
             ? `${pane.ssh.user}@${pane.ssh.host}:${pane.ssh.port}`
             : pane.cwd || t('common.default')}
         </span>
+        {sshStatus?.state === 'reconnecting' && (
+          <span
+            className="ssh-reconnect"
+            title={t('pane.sshReconnecting', { n: sshStatus.attempt })}
+          >
+            ⟳ {t('pane.sshReconnecting', { n: sshStatus.attempt })}
+          </span>
+        )}
         {pane.pinned && (
           <span title={t('pane.pinnedTip')} style={{ fontSize: 11, lineHeight: 1 }}>
             📌
@@ -273,6 +299,10 @@ export function Pane({ pane }: { pane: PaneModel }) {
         <div ref={slotRef} style={{ flex: 1, minHeight: 0, minWidth: 0 }} />
       )}
 
+      {claudeRunning && claudeSession?.found && (
+        <ClaudePanel session={claudeSession} busy={claudeBusy} />
+      )}
+
       {!isBrowser && status === 'running' && (
         <div
           style={{
@@ -328,7 +358,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
               <button
                 className="claude-chip"
                 title={t('claude.chipEsc')}
-                onClick={() => writePty(pane.id, '\x1b')}
+                onClick={() => writeSession(pane, '\x1b')}
               >
                 Esc
               </button>
@@ -343,6 +373,17 @@ export function Pane({ pane }: { pane: PaneModel }) {
           y={claudeMenu.y}
           onClose={() => setClaudeMenu(null)}
           items={claudeItems}
+        />
+      )}
+
+      {sessionsOpen && (
+        <ClaudeSessionsDialog
+          cwd={pane.cwd}
+          onClose={() => setSessionsOpen(false)}
+          onPick={(id) => {
+            setSessionsOpen(false);
+            typeCommand(`claude -r ${id}`);
+          }}
         />
       )}
 

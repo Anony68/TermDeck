@@ -44,6 +44,9 @@ pub struct FileEntry {
     pub modified: u64,
     /// e.g. "drwxr-xr-x" for remote, "" for local.
     pub perms: String,
+    /// Unix permission bits (rwx) for remote entries; 0 for local.
+    pub mode: u32,
+    pub is_symlink: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -55,11 +58,33 @@ struct TransferProgress {
     total: u64,
 }
 
+/// Live SSH connection state, pushed to the frontend on `ssh://status`.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SshStatus {
+    pane_id: String,
+    /// "connected" | "reconnecting" | "disconnected".
+    state: String,
+    attempt: u32,
+}
+
 enum SshOp {
     Write(Vec<u8>),
     Resize(u16, u16),
     Kill,
 }
+
+/// Why the shell I/O loop returned.
+enum IoExit {
+    /// User asked to close the pane (or the op channel dropped).
+    Kill,
+    /// Remote shell exited cleanly (e.g. `exit`) — do NOT reconnect.
+    Clean(i32),
+    /// Connection error / keepalive failure — try to reconnect.
+    Died,
+}
+
+const SSH_MAX_RECONNECT: u32 = 5;
 
 struct SftpConn {
     /// Keeps the underlying connection alive alongside the SFTP handle.
@@ -175,21 +200,35 @@ fn connect(app: &AppHandle, pane_id: &str, cfg: &SshConfig) -> Result<Session, S
 
     check_host_key(app, &sess, &cfg.host, cfg.port)?;
 
+    // Primary auth method, then fall back to ssh-agent (B2) so users with keys
+    // loaded in ssh-agent / Pageant connect without configuring a key file.
     let secret = get_secret(pane_id);
+    let mut auth_err: Option<String> = None;
     if cfg.auth == "key" {
         let key = cfg.key_path.clone().unwrap_or_default();
         if key.is_empty() {
-            return Err("chưa chọn file private key".into());
+            auth_err = Some("chưa chọn file private key".into());
+        } else if let Err(e) =
+            sess.userauth_pubkey_file(&cfg.user, None, Path::new(&key), secret.as_deref())
+        {
+            auth_err = Some(format!("xác thực bằng key thất bại: {e}"));
         }
-        sess.userauth_pubkey_file(&cfg.user, None, Path::new(&key), secret.as_deref())
-            .map_err(|e| format!("xác thực bằng key thất bại: {e}"))?;
     } else {
-        let pass = secret.ok_or("chưa lưu mật khẩu cho terminal này")?;
-        sess.userauth_password(&cfg.user, &pass)
-            .map_err(|e| format!("sai mật khẩu hoặc server từ chối: {e}"))?;
+        match &secret {
+            Some(p) => {
+                if let Err(e) = sess.userauth_password(&cfg.user, p) {
+                    auth_err = Some(format!("sai mật khẩu hoặc server từ chối: {e}"));
+                }
+            }
+            None => auth_err = Some("chưa lưu mật khẩu cho terminal này".into()),
+        }
     }
     if !sess.authenticated() {
-        return Err("xác thực thất bại".into());
+        // Best-effort ssh-agent fallback (ignored if no agent / no matching key).
+        let _ = sess.userauth_agent(&cfg.user);
+    }
+    if !sess.authenticated() {
+        return Err(auth_err.unwrap_or_else(|| "xác thực thất bại".into()));
     }
     sess.set_timeout(0); // no timeout for post-auth I/O (shell / SFTP transfers)
     sess.set_keepalive(true, 30);
@@ -221,109 +260,179 @@ pub fn spawn_ssh(
 
     // Everything below blocks (TCP connect, handshake, auth). Run it ALL on a
     // background thread so the command returns immediately and the UI never
-    // freezes when a host is unreachable or the server never answers.
+    // freezes when a host is unreachable or the server never answers. The thread
+    // also auto-reconnects on connection loss (up to SSH_MAX_RECONNECT).
     std::thread::spawn(move || {
-        // Surface a connection/setup error into the terminal, then exit the pane.
+        let status = |state: &str, attempt: u32| {
+            let _ = app.emit(
+                "ssh://status",
+                SshStatus { pane_id: pane_id.clone(), state: state.into(), attempt },
+            );
+        };
         let fail = |on_event: &Channel<PtyEvent>, msg: String| {
             let line = format!("\r\n\x1b[31m{msg}\x1b[0m\r\n");
             let _ = on_event.send(PtyEvent::Data { data: line.into_bytes() });
             let _ = on_event.send(PtyEvent::Exit { code: -1 });
         };
-
-        let sess = match connect(&app, &pane_id, &cfg) {
-            Ok(s) => s,
-            Err(e) => {
-                fail(&on_event, e);
-                terms.lock().unwrap().remove(&pane_id);
-                return;
-            }
+        let note = |on_event: &Channel<PtyEvent>, msg: String| {
+            let line = format!("\r\n\x1b[33m{msg}\x1b[0m\r\n");
+            let _ = on_event.send(PtyEvent::Data { data: line.into_bytes() });
         };
-        let mut ch = match sess
-            .channel_session()
-            .and_then(|mut ch| {
+
+        let mut attempt: u32 = 0;
+        let mut first = true;
+        loop {
+            // ---- (re)connect ----
+            let sess = match connect(&app, &pane_id, &cfg) {
+                Ok(s) => s,
+                Err(e) => {
+                    if first {
+                        fail(&on_event, e);
+                        break;
+                    }
+                    attempt += 1;
+                    if attempt > SSH_MAX_RECONNECT {
+                        note(&on_event, "Không kết nối lại được — đã dừng.".into());
+                        status("disconnected", attempt);
+                        let _ = on_event.send(PtyEvent::Exit { code: -1 });
+                        break;
+                    }
+                    status("reconnecting", attempt);
+                    std::thread::sleep(Duration::from_secs((attempt as u64).min(5)));
+                    continue;
+                }
+            };
+            let mut ch = match sess.channel_session().and_then(|mut ch| {
                 ch.request_pty("xterm-256color", None, Some((cols as u32, rows as u32, 0, 0)))?;
                 ch.shell()?;
                 Ok(ch)
             }) {
-            Ok(ch) => ch,
-            Err(e) => {
-                fail(&on_event, format!("mở shell từ xa lỗi: {e}"));
-                terms.lock().unwrap().remove(&pane_id);
-                return;
-            }
-        };
+                Ok(ch) => ch,
+                Err(e) => {
+                    if first {
+                        fail(&on_event, format!("mở shell từ xa lỗi: {e}"));
+                        break;
+                    }
+                    attempt += 1;
+                    status("reconnecting", attempt);
+                    std::thread::sleep(Duration::from_secs((attempt as u64).min(5)));
+                    continue;
+                }
+            };
 
-        if let Some(c) = command {
-            if !c.trim().is_empty() {
-                let _ = ch.write_all(format!("{c}\n").as_bytes());
-                let _ = ch.flush();
+            if !first {
+                note(&on_event, "Đã kết nối lại.".into());
+            }
+            // (Re)apply the startup command so a reconnect lands back in context.
+            if let Some(c) = &command {
+                if !c.trim().is_empty() {
+                    let _ = ch.write_all(format!("{c}\n").as_bytes());
+                    let _ = ch.flush();
+                }
+            }
+            first = false;
+            attempt = 0;
+            status("connected", 0);
+            sess.set_blocking(false);
+
+            // ---- I/O loop with a keepalive health pump ----
+            let outcome = run_ssh_io(&sess, &mut ch, &rx, &on_event);
+            sess.set_blocking(true);
+            let _ = ch.close();
+            let _ = ch.wait_close();
+
+            match outcome {
+                IoExit::Kill => break,
+                IoExit::Clean(code) => {
+                    let _ = on_event.send(PtyEvent::Exit { code });
+                    break;
+                }
+                IoExit::Died => {
+                    attempt += 1;
+                    if attempt > SSH_MAX_RECONNECT {
+                        note(&on_event, "Mất kết nối — đã thử lại nhiều lần, dừng.".into());
+                        status("disconnected", attempt);
+                        let _ = on_event.send(PtyEvent::Exit { code: -1 });
+                        break;
+                    }
+                    note(&on_event, format!("Mất kết nối — đang thử lại ({attempt})…"));
+                    status("reconnecting", attempt);
+                    std::thread::sleep(Duration::from_secs((attempt as u64).min(5)));
+                    continue;
+                }
             }
         }
-
-        sess.set_blocking(false);
-
-        let mut buf = [0u8; 8192];
-        let mut pending: Vec<u8> = Vec::new();
-        'outer: loop {
-            // 1) queued ops from the frontend
-            loop {
-                match rx.try_recv() {
-                    Ok(SshOp::Write(d)) => pending.extend_from_slice(&d),
-                    Ok(SshOp::Resize(c, r)) => {
-                        let _ = ch.request_pty_size(c as u32, r as u32, None, None);
-                    }
-                    Ok(SshOp::Kill) => break 'outer,
-                    Err(mpsc::TryRecvError::Empty) => break,
-                    Err(mpsc::TryRecvError::Disconnected) => break 'outer,
-                }
-            }
-            // 2) flush pending writes (non-blocking, keep the remainder)
-            let mut wrote = false;
-            while !pending.is_empty() {
-                match ch.write(&pending) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        pending.drain(..n);
-                        wrote = true;
-                    }
-                    Err(_) => break, // EAGAIN — retry next tick
-                }
-            }
-            // 3) read output
-            let mut read_any = false;
-            match ch.read(&mut buf) {
-                Ok(0) => {
-                    if ch.eof() {
-                        break 'outer;
-                    }
-                }
-                Ok(n) => {
-                    read_any = true;
-                    if on_event
-                        .send(PtyEvent::Data {
-                            data: buf[..n].to_vec(),
-                        })
-                        .is_err()
-                    {
-                        break 'outer;
-                    }
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(_) => break 'outer,
-            }
-            if !read_any && !wrote {
-                std::thread::sleep(Duration::from_millis(8));
-            }
-        }
-        sess.set_blocking(true);
-        let _ = ch.close();
-        let _ = ch.wait_close();
-        let code = ch.exit_status().unwrap_or(0);
-        let _ = on_event.send(PtyEvent::Exit { code });
         terms.lock().unwrap().remove(&pane_id);
     });
 
     Ok(())
+}
+
+/// Non-blocking read/write pump for one SSH shell channel. Also pings keepalive
+/// every ~15 s so a dead connection is detected promptly. Returns why it ended.
+fn run_ssh_io(
+    sess: &Session,
+    ch: &mut ssh2::Channel,
+    rx: &std::sync::mpsc::Receiver<SshOp>,
+    on_event: &Channel<PtyEvent>,
+) -> IoExit {
+    let mut buf = [0u8; 8192];
+    let mut pending: Vec<u8> = Vec::new();
+    let mut last_keepalive = std::time::Instant::now();
+    loop {
+        // 1) queued ops from the frontend
+        loop {
+            match rx.try_recv() {
+                Ok(SshOp::Write(d)) => pending.extend_from_slice(&d),
+                Ok(SshOp::Resize(c, r)) => {
+                    let _ = ch.request_pty_size(c as u32, r as u32, None, None);
+                }
+                Ok(SshOp::Kill) => return IoExit::Kill,
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => return IoExit::Kill,
+            }
+        }
+        // 2) flush pending writes (non-blocking, keep the remainder)
+        let mut wrote = false;
+        while !pending.is_empty() {
+            match ch.write(&pending) {
+                Ok(0) => break,
+                Ok(n) => {
+                    pending.drain(..n);
+                    wrote = true;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(_) => return IoExit::Died,
+            }
+        }
+        // 3) read output
+        let mut read_any = false;
+        match ch.read(&mut buf) {
+            Ok(0) => {
+                if ch.eof() {
+                    return IoExit::Clean(ch.exit_status().unwrap_or(0));
+                }
+            }
+            Ok(n) => {
+                read_any = true;
+                if on_event.send(PtyEvent::Data { data: buf[..n].to_vec() }).is_err() {
+                    return IoExit::Kill;
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(_) => return IoExit::Died,
+        }
+        // 4) keepalive health check
+        if last_keepalive.elapsed() >= Duration::from_secs(15) {
+            last_keepalive = std::time::Instant::now();
+            if sess.keepalive_send().is_err() {
+                return IoExit::Died;
+            }
+        }
+        if !read_any && !wrote {
+            std::thread::sleep(Duration::from_millis(8));
+        }
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -399,9 +508,15 @@ pub fn sftp_disconnect(state: tauri::State<SshManager>, pane_id: String) -> Resu
     Ok(())
 }
 
-fn perms_string(mode: u32, is_dir: bool) -> String {
+fn perms_string(mode: u32, is_dir: bool, is_symlink: bool) -> String {
     let mut s = String::with_capacity(10);
-    s.push(if is_dir { 'd' } else { '-' });
+    s.push(if is_symlink {
+        'l'
+    } else if is_dir {
+        'd'
+    } else {
+        '-'
+    });
     for shift in [6u32, 3, 0] {
         let bits = (mode >> shift) & 7;
         s.push(if bits & 4 != 0 { 'r' } else { '-' });
@@ -428,15 +543,100 @@ pub fn sftp_list(
         .filter_map(|(p, st)| {
             let name = p.file_name()?.to_string_lossy().to_string();
             let is_dir = st.is_dir();
+            let full = st.perm.unwrap_or(0);
+            let is_symlink = full & 0o170000 == 0o120000; // S_IFLNK
             Some(FileEntry {
                 name,
                 size: st.size.unwrap_or(0),
                 is_dir,
                 modified: st.mtime.unwrap_or(0),
-                perms: perms_string(st.perm.unwrap_or(0), is_dir),
+                perms: perms_string(full, is_dir, is_symlink),
+                mode: full & 0o777,
+                is_symlink,
             })
         })
         .collect())
+}
+
+/// One recursive-search result (C5).
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub path: String,
+    pub name: String,
+    pub is_dir: bool,
+}
+
+/// Recursively search a remote subtree for names containing `query` (bounded).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn sftp_search(
+    state: tauri::State<'_, SshManager>,
+    pane_id: String,
+    root: String,
+    query: String,
+) -> Result<Vec<SearchHit>, String> {
+    let conn = get_sftp(&state, &pane_id)?;
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = conn.lock().unwrap();
+        let mut hits: Vec<SearchHit> = Vec::new();
+        let mut stack = vec![root];
+        let mut visited = 0u32;
+        while let Some(dir) = stack.pop() {
+            if hits.len() >= 500 || visited >= 8000 {
+                break; // bound runaway trees
+            }
+            visited += 1;
+            let list = match conn.sftp.readdir(Path::new(&dir)) {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+            for (p, st) in list {
+                let name = match p.file_name() {
+                    Some(n) => n.to_string_lossy().to_string(),
+                    None => continue,
+                };
+                let full = format!("{}/{}", dir.trim_end_matches('/'), name);
+                let is_dir = st.is_dir();
+                if name.to_lowercase().contains(&q) {
+                    hits.push(SearchHit { path: full.clone(), name, is_dir });
+                }
+                let is_symlink = st.perm.unwrap_or(0) & 0o170000 == 0o120000;
+                if is_dir && !is_symlink {
+                    stack.push(full);
+                }
+            }
+        }
+        Ok(hits)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Change permission bits of a remote file/dir (C4).
+#[tauri::command(rename_all = "camelCase")]
+pub fn sftp_chmod(
+    state: tauri::State<SshManager>,
+    pane_id: String,
+    path: String,
+    mode: u32,
+) -> Result<(), String> {
+    let conn = get_sftp(&state, &pane_id)?;
+    let conn = conn.lock().unwrap();
+    let stat = ssh2::FileStat {
+        size: None,
+        uid: None,
+        gid: None,
+        perm: Some(mode & 0o777),
+        atime: None,
+        mtime: None,
+    };
+    conn.sftp
+        .setstat(Path::new(&path), stat)
+        .map_err(|e| format!("đổi quyền lỗi: {e}"))
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -602,6 +802,8 @@ pub fn fs_list(path: String) -> Result<Vec<FileEntry>, String> {
                     is_dir: true,
                     modified: 0,
                     perms: String::new(),
+                    mode: 0,
+                    is_symlink: false,
                 });
             }
         }
@@ -627,6 +829,8 @@ pub fn fs_list(path: String) -> Result<Vec<FileEntry>, String> {
             is_dir: meta.is_dir(),
             modified,
             perms: String::new(),
+            mode: 0,
+            is_symlink: meta.file_type().is_symlink(),
         });
     }
     Ok(out)
@@ -656,4 +860,93 @@ pub fn fs_home() -> String {
     std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default()
+}
+
+// ---------- ~/.ssh/config import (B3) ----------
+
+#[derive(Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConfigHost {
+    pub alias: String,
+    pub host_name: String,
+    pub user: String,
+    pub port: u16,
+    pub identity_file: String,
+}
+
+/// Parse `~/.ssh/config` into a flat list of concrete hosts (wildcards skipped)
+/// to pre-fill the New-SSH dialog.
+#[tauri::command]
+pub fn ssh_config_hosts() -> Vec<SshConfigHost> {
+    let mut out = Vec::new();
+    let home = match std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
+        Ok(h) => h,
+        Err(_) => return out,
+    };
+    let path = std::path::Path::new(&home).join(".ssh").join("config");
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return out;
+    };
+
+    // Current block: the aliases it names + the settings gathered so far.
+    let mut aliases: Vec<String> = Vec::new();
+    let mut host_name = String::new();
+    let mut user = String::new();
+    let mut port: u16 = 22;
+    let mut identity = String::new();
+
+    let flush = |out: &mut Vec<SshConfigHost>,
+                 aliases: &[String],
+                 host_name: &str,
+                 user: &str,
+                 port: u16,
+                 identity: &str| {
+        for a in aliases {
+            out.push(SshConfigHost {
+                alias: a.clone(),
+                host_name: if host_name.is_empty() { a.clone() } else { host_name.to_string() },
+                user: user.to_string(),
+                port,
+                identity_file: identity.to_string(),
+            });
+        }
+    };
+
+    for raw in content.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut parts = line.splitn(2, |c: char| c.is_whitespace() || c == '=');
+        let key = parts.next().unwrap_or("").to_lowercase();
+        let val = parts.next().unwrap_or("").trim().trim_matches('"').to_string();
+        match key.as_str() {
+            "host" => {
+                // Flush the previous block, start a new one.
+                flush(&mut out, &aliases, &host_name, &user, port, &identity);
+                aliases = val
+                    .split_whitespace()
+                    .filter(|a| !a.contains('*') && !a.contains('?'))
+                    .map(|a| a.to_string())
+                    .collect();
+                host_name.clear();
+                user.clear();
+                port = 22;
+                identity.clear();
+            }
+            "hostname" => host_name = val,
+            "user" => user = val,
+            "port" => port = val.parse().unwrap_or(22),
+            "identityfile" => {
+                identity = if let Some(rest) = val.strip_prefix("~/") {
+                    std::path::Path::new(&home).join(rest).to_string_lossy().to_string()
+                } else {
+                    val
+                };
+            }
+            _ => {}
+        }
+    }
+    flush(&mut out, &aliases, &host_name, &user, port, &identity);
+    out
 }

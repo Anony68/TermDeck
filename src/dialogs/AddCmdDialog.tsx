@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useStore, findPane } from '../state/store';
 import { SHELL_ORDER, SHELLS } from '../shells';
 import { pickFolder, pickFile } from '../ipc/api';
-import { secretSet } from '../ipc/ssh';
+import { secretSet, sshConfigHosts, type SshConfigHost } from '../ipc/ssh';
 import { ShellBadge } from '../components/ShellBadge';
 import { useT, type TKey } from '../i18n';
 import type { PaneKind, ShellKind, SshConfig } from '../types';
@@ -58,8 +58,26 @@ export function AddCmdDialog() {
   const [secret, setSecret] = useState('');
   const [remotePath, setRemotePath] = useState(editPane?.ssh?.remotePath ?? '');
   const [error, setError] = useState<string | null>(null);
+  const [cfgHosts, setCfgHosts] = useState<SshConfigHost[] | null>(null);
+  const [showCfg, setShowCfg] = useState(false);
 
   const isRemote = kind === 'ssh' || kind === 'browser';
+
+  const openSshConfig = async () => {
+    setShowCfg((v) => !v);
+    if (cfgHosts === null) setCfgHosts(await sshConfigHosts());
+  };
+  const applyCfgHost = (h: SshConfigHost) => {
+    setHost(h.hostName || h.alias);
+    if (h.port) setPort(String(h.port));
+    if (h.user) setUser(h.user);
+    if (h.identityFile) {
+      setAuth('key');
+      setKeyPath(h.identityFile);
+    }
+    if (!name.trim()) setName(h.alias);
+    setShowCfg(false);
+  };
 
   const onProjectChange = (v: string) => {
     if (v === '__new__') {
@@ -253,6 +271,46 @@ export function AddCmdDialog() {
 
           {isRemote && (
             <>
+              <div style={{ position: 'relative' }}>
+                <button className="ghost-btn" style={{ padding: '6px 12px', fontSize: 11.5 }} onClick={openSshConfig}>
+                  ⤓ {t('dlg.fromSshConfig')} ▾
+                </button>
+                {showCfg && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      marginTop: 4,
+                      maxHeight: 220,
+                      overflow: 'auto',
+                      background: 'var(--surface-3)',
+                      border: '1px solid var(--border-3)',
+                      borderRadius: 8,
+                      boxShadow: '0 12px 32px rgba(0,0,0,0.5)',
+                      zIndex: 10,
+                      padding: 4,
+                    }}
+                  >
+                    {cfgHosts?.length === 0 && (
+                      <div style={{ padding: 10, font: '400 11.5px var(--font-ui)', color: 'var(--text-faint)' }}>
+                        {t('dlg.sshConfigEmpty')}
+                      </div>
+                    )}
+                    {cfgHosts?.map((h) => (
+                      <div key={h.alias} className="menu-item" onClick={() => applyCfgHost(h)}>
+                        <span style={{ flex: 1 }}>{h.alias}</span>
+                        <span style={{ color: 'var(--text-muted)', font: '400 10px var(--font-mono)' }}>
+                          {h.user ? `${h.user}@` : ''}
+                          {h.hostName || h.alias}
+                          {h.port && h.port !== 22 ? `:${h.port}` : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div style={{ display: 'flex', gap: 10 }}>
                 <div style={{ flex: 1 }}>
                   <Field label={t('dlg.host')}>

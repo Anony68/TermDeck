@@ -43,7 +43,8 @@ function fmtDate(ms: number): string {
 }
 
 export function SettingsWindow() {
-  const [section, setSection] = useState<Section>('general');
+  const initialSection = useStore((s) => s.ui.settingsSection);
+  const [section, setSection] = useState<Section>((initialSection as Section) || 'general');
   const closeSettings = useStore((s) => s.closeSettings);
   const t = useT();
 

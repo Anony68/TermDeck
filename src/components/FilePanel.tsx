@@ -9,6 +9,10 @@ export interface FsBackend {
   mkdir: (path: string) => Promise<void>;
   rename: (from: string, to: string) => Promise<void>;
   remove: (path: string, isDir: boolean) => Promise<void>;
+  /** Change permission bits (remote SFTP only; absent for local). */
+  chmod?: (path: string, mode: number) => Promise<void>;
+  /** Recursive search from a root (remote SFTP only; absent for local). */
+  search?: (root: string, query: string) => Promise<Array<{ path: string; name: string; isDir: boolean }>>;
   /** Path separator + join, so local (\\) and remote (/) behave correctly. */
   sep: string;
 }
@@ -72,7 +76,26 @@ export function FilePanel({
   const [pathDraft, setPathDraft] = useState(path);
   const [confirmDel, setConfirmDel] = useState<FileEntry[] | null>(null);
   const [marquee, setMarquee] = useState<{ top: number; height: number } | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<
+    Array<{ path: string; name: string; isDir: boolean }> | null
+  >(null);
   const t = useT();
+
+  const runSearch = async (q: string) => {
+    if (!backend.search || !q.trim()) return;
+    setSearchResults(null);
+    try {
+      setSearchResults(await backend.search(path, q.trim()));
+    } catch {
+      setSearchResults([]);
+    }
+  };
+  const dirOf = (p: string) => {
+    const i = p.lastIndexOf(backend.sep);
+    return i <= 0 ? (backend.sep === '\\' ? '' : '/') : p.slice(0, i);
+  };
 
   const listRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef(-1); // last anchor index (for shift/keyboard range select)
@@ -287,6 +310,20 @@ export function FilePanel({
       alert(t('fb.errRename', { err: String(e) }));
     }
   };
+  const doChmod = async (entry: FileEntry) => {
+    if (!backend.chmod) return;
+    const cur = (entry.mode & 0o777).toString(8).padStart(3, '0');
+    const input = window.prompt(t('fb.chmodPrompt'), cur);
+    if (!input?.trim()) return;
+    const mode = parseInt(input.trim(), 8);
+    if (Number.isNaN(mode)) return;
+    try {
+      await backend.chmod(joinPath(path, entry.name, backend.sep), mode);
+      void load(path);
+    } catch (e) {
+      alert(t('fb.errChmod', { err: String(e) }));
+    }
+  };
   // Actual deletion — the confirm popup gates this.
   const performRemove = async (list: FileEntry[]) => {
     setConfirmDel(null);
@@ -307,6 +344,9 @@ export function FilePanel({
       { label: transferLabel, disabled: list.length === 0, onClick: () => onTransfer(list, path) },
       { label: t('fb.open'), disabled: !target?.isDir, onClick: () => target && openEntry(target) },
       { label: t('fb.rename'), disabled: !target, onClick: () => target && doRename(target) },
+      ...(backend.chmod
+        ? [{ label: t('fb.chmod'), disabled: !target, onClick: () => target && doChmod(target) }]
+        : []),
       { label: '', separator: true },
       { label: t('fb.newFolder'), onClick: doMkdir },
       { label: t('fb.refresh'), onClick: () => load(path) },
@@ -355,8 +395,40 @@ export function FilePanel({
           <button className="fb-tool" title={t('fb.newFolder')} onClick={doMkdir}>
             ⊕
           </button>
+          {backend.search && (
+            <button
+              className={`fb-tool${searching ? ' on' : ''}`}
+              title={searching ? t('fb.searchClose') : t('fb.searchBtn')}
+              onClick={() => {
+                setSearching((v) => !v);
+                setSearchResults(null);
+                setSearchQuery('');
+              }}
+            >
+              🔍
+            </button>
+          )}
         </div>
       </div>
+
+      {searching && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
+          <input
+            autoFocus
+            className="field"
+            placeholder={t('fb.searchPlaceholder')}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void runSearch(searchQuery)}
+            style={{ padding: '4px 8px', fontSize: 11.5 }}
+          />
+          {searchResults && (
+            <span style={{ font: '400 10px var(--font-mono)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+              {t('fb.searchResults', { n: searchResults.length })}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Path bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 8px', borderBottom: '1px solid var(--border)' }}>
@@ -421,9 +493,43 @@ export function FilePanel({
           setMenu({ x: e.clientX, y: e.clientY });
         }}
       >
-        {marquee && marquee.height > 2 && (
+        {marquee && marquee.height > 2 && !searching && (
           <div className="fb-marquee" style={{ top: marquee.top, height: marquee.height }} />
         )}
+        {searching && (
+          <>
+            {searchResults === null && searchQuery.trim() && (
+              <div style={{ padding: 12, color: 'var(--text-muted)', fontSize: 11 }}>{t('fb.searching')}</div>
+            )}
+            {searchResults?.length === 0 && (
+              <div style={{ padding: 12, color: 'var(--text-faint)', fontSize: 11 }}>{t('fb.searchNone')}</div>
+            )}
+            {searchResults?.map((r) => (
+              <div
+                key={r.path}
+                className="fb-row fb-item"
+                title={r.path}
+                onDoubleClick={() => {
+                  setSearching(false);
+                  go(dirOf(r.path));
+                }}
+              >
+                <span className="fb-c-name">
+                  <span className="fb-ico">{r.isDir ? '📁' : '📄'}</span>
+                  {r.name}
+                </span>
+                <span
+                  className="fb-c-date"
+                  style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {dirOf(r.path)}
+                </span>
+              </div>
+            ))}
+          </>
+        )}
+        {!searching && (
+          <>
         {error && <div style={{ padding: 12, color: 'var(--danger)', font: '400 11px var(--font-mono)' }}>{error}</div>}
         {loading && !entries.length && (
           <div style={{ padding: 12, color: 'var(--text-muted)', fontSize: 11 }}>{t('fb.loading')}</div>
@@ -456,14 +562,16 @@ export function FilePanel({
               setMenu({ x: ev.clientX, y: ev.clientY, entry: e });
             }}
           >
-            <span className="fb-c-name" title={e.name}>
-              <span className="fb-ico">{e.isDir ? '📁' : '📄'}</span>
+            <span className="fb-c-name" title={e.perms ? `${e.perms}  ${e.name}` : e.name}>
+              <span className="fb-ico">{e.isSymlink ? '🔗' : e.isDir ? '📁' : '📄'}</span>
               {e.name}
             </span>
             <span className="fb-c-size">{fmtSize(e.size, e.isDir)}</span>
             <span className="fb-c-date">{fmtDate(e.modified)}</span>
           </div>
         ))}
+          </>
+        )}
       </div>
 
       {/* Footer: transfer button + selection count */}

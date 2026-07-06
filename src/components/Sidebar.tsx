@@ -4,8 +4,19 @@ import { SAVED_DND_MIME } from '../dnd';
 import { PaneBadge } from './ShellBadge';
 import { ContextMenu } from './ContextMenu';
 import { ClaudeIcon } from './ClaudeIcon';
-import { useT } from '../i18n';
-import type { Pane, Project } from '../types';
+import { useT, type TKey } from '../i18n';
+import type { Pane, PaneKind, Project } from '../types';
+
+type TypeFilter = 'all' | PaneKind;
+
+const TYPE_CHIPS: Array<{ k: TypeFilter; key: TKey }> = [
+  { k: 'all', key: 'sidebar.typeAll' },
+  { k: 'shell', key: 'sidebar.typeShell' },
+  { k: 'ssh', key: 'sidebar.typeSsh' },
+  { k: 'browser', key: 'sidebar.typeFiles' },
+];
+
+const kindOf = (p: Pane): PaneKind => p.kind ?? 'shell';
 
 export function Sidebar() {
   const panes = useStore((s) => s.panes);
@@ -19,30 +30,48 @@ export function Sidebar() {
   const togglePinPane = useStore((s) => s.togglePinPane);
   const openEditCmd = useStore((s) => s.openEditCmd);
   const openAddCmd = useStore((s) => s.openAddCmd);
+  const openSettings = useStore((s) => s.openSettings);
   const t = useT();
 
   const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [projectFilter, setProjectFilter] = useState<string>('all'); // 'all' | '__none__' | projectId
   const [menu, setMenu] = useState<{ x: number; y: number; paneId: string } | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  const filtered = panes.filter(
-    (c) =>
-      c.name.toLowerCase().includes(query.toLowerCase()) ||
-      c.cwd.toLowerCase().includes(query.toLowerCase())
-  );
   const menuPane = menu ? panes.find((p) => p.id === menu.paneId) : undefined;
   const menuRunning = menu ? (runtime[menu.paneId]?.status ?? 'running') === 'running' : false;
 
-  // Group terminals by project (projects in order, then an "other" group).
-  const groups: Array<{ key: string; project?: Project; items: Pane[] }> = [];
-  for (const proj of projects) {
-    const items = filtered.filter((p) => p.projectId === proj.id);
-    if (items.length) groups.push({ key: proj.id, project: proj, items });
-  }
-  const ungrouped = filtered.filter(
-    (p) => !p.projectId || !projects.some((pr) => pr.id === p.projectId)
+  const isUngrouped = (p: Pane) => !p.projectId || !projects.some((pr) => pr.id === p.projectId);
+
+  // Base = query + type filters (project filter applied after, so chip counts are stable).
+  const base = panes.filter(
+    (c) =>
+      (typeFilter === 'all' || kindOf(c) === typeFilter) &&
+      (c.name.toLowerCase().includes(query.toLowerCase()) ||
+        c.cwd.toLowerCase().includes(query.toLowerCase()))
   );
-  if (ungrouped.length) groups.push({ key: '__none__', items: ungrouped });
+  const noneCount = base.filter(isUngrouped).length;
+  const filtered = base.filter((p) =>
+    projectFilter === 'all'
+      ? true
+      : projectFilter === '__none__'
+        ? isUngrouped(p)
+        : p.projectId === projectFilter
+  );
+
+  // Group by project only in "all projects" mode; a specific filter shows a flat list.
+  const groups: Array<{ key: string; project?: Project; items: Pane[] }> = [];
+  if (projectFilter === 'all') {
+    for (const proj of projects) {
+      const items = filtered.filter((p) => p.projectId === proj.id);
+      if (items.length) groups.push({ key: proj.id, project: proj, items });
+    }
+    const ungrouped = filtered.filter(isUngrouped);
+    if (ungrouped.length) groups.push({ key: '__none__', items: ungrouped });
+  } else {
+    groups.push({ key: projectFilter, items: filtered });
+  }
 
   const toggle = (key: string) =>
     setCollapsed((prev) => {
@@ -165,7 +194,7 @@ export function Sidebar() {
           {t('sidebar.newTerminal')}
         </button>
       </div>
-      <div style={{ margin: '2px 12px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
+      <div style={{ margin: '2px 12px 8px', display: 'flex', alignItems: 'center', gap: 7 }}>
         <span style={{ color: 'var(--text-muted)' }}>⌕</span>
         <input
           className="field"
@@ -176,7 +205,70 @@ export function Sidebar() {
         />
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 8px 8px', minHeight: 0 }}>
+      {/* Type filter */}
+      <div style={{ display: 'flex', gap: 4, padding: '0 12px 8px' }}>
+        {TYPE_CHIPS.map((c) => {
+          const n = c.k === 'all' ? base.length : base.filter((p) => kindOf(p) === c.k).length;
+          return (
+            <button
+              key={c.k}
+              className={`side-chip${typeFilter === c.k ? ' active' : ''}`}
+              onClick={() => setTypeFilter(c.k)}
+              style={{ flex: 1 }}
+            >
+              {t(c.key)} <span style={{ opacity: 0.6 }}>{n}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Projects — prominent filter bar + manage shortcut */}
+      <div style={{ padding: '0 12px 8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 5 }}>
+          <span style={{ font: '700 10px var(--font-ui)', color: 'var(--accent)', letterSpacing: '0.08em', flex: 1 }}>
+            📁 {t('sidebar.projects')}
+          </span>
+          <span
+            className="link-btn"
+            title={t('sidebar.manageProjects')}
+            onClick={() => openSettings('projects')}
+            style={{ fontSize: 10.5 }}
+          >
+            {t('sidebar.manageProjects')} ⚙
+          </span>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          <button
+            className={`side-chip${projectFilter === 'all' ? ' active' : ''}`}
+            onClick={() => setProjectFilter('all')}
+          >
+            {t('sidebar.allProjects')} <span style={{ opacity: 0.6 }}>{base.length}</span>
+          </button>
+          {projects.map((pr) => {
+            const n = base.filter((p) => p.projectId === pr.id).length;
+            return (
+              <button
+                key={pr.id}
+                className={`side-chip${projectFilter === pr.id ? ' active' : ''}`}
+                onClick={() => setProjectFilter(pr.id)}
+                title={pr.path || pr.name}
+              >
+                {pr.name} <span style={{ opacity: 0.6 }}>{n}</span>
+              </button>
+            );
+          })}
+          {noneCount > 0 && (
+            <button
+              className={`side-chip${projectFilter === '__none__' ? ' active' : ''}`}
+              onClick={() => setProjectFilter('__none__')}
+            >
+              {t('sidebar.noProject')} <span style={{ opacity: 0.6 }}>{noneCount}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflow: 'auto', padding: '0 8px 8px', minHeight: 0, borderTop: '1px solid var(--border)' }}>
         {panes.length === 0 && (
           <div
             style={{
@@ -218,7 +310,17 @@ export function Sidebar() {
                   <span style={{ fontSize: 8, transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.12s' }}>
                     ▼
                   </span>
-                  <span style={{ textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                  {g.project && <span style={{ fontSize: 10 }}>📁</span>}
+                  <span
+                    style={{
+                      textTransform: 'uppercase',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      flex: 1,
+                      color: g.project ? 'var(--text-2)' : 'var(--text-muted)',
+                    }}
+                  >
                     {g.project ? g.project.name : t('sidebar.other')}
                   </span>
                   <span style={{ color: 'var(--text-faint)' }}>{g.items.length}</span>

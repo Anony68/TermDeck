@@ -20,6 +20,7 @@ import { killSession } from '../ipc/session';
 import { secretDelete } from '../ipc/ssh';
 import { isPaneActive } from './activity';
 import { translate } from '../i18n';
+import type { ClaudeSession } from '../ipc/claude';
 
 const uid = () =>
   Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
@@ -85,12 +86,18 @@ interface AppState {
   runtime: Record<string, RuntimeInfo>;
   /** Live CPU%/memory per pane (from the Rust sampler; not persisted). */
   stats: Record<string, PaneStat>;
+  /** Live Claude Code session state per pane (from the JSONL reader; not persisted). */
+  claudeSessions: Record<string, ClaudeSession>;
+  /** Live SSH connection health per pane ('reconnecting' while dropped); not persisted. */
+  sshStatus: Record<string, { state: string; attempt: number }>;
   focusedPaneId: string | null;
   shells: ShellInfo[];
   ui: {
     addCmdOpen: boolean;
     addCmdSlot: number | null;
     settingsOpen: boolean;
+    /** Section to open the settings window on (e.g. 'projects'); null = default. */
+    settingsSection: string | null;
     editPaneId: string | null;
   };
   hydrated: boolean;
@@ -99,6 +106,8 @@ interface AppState {
   hydrate: () => Promise<void>;
   setShells: (s: ShellInfo[]) => void;
   setStats: (list: Array<{ paneId: string; cpu: number; mem: number; claude: boolean }>) => void;
+  setClaudeSessions: (map: Record<string, ClaudeSession>) => void;
+  setSshStatus: (paneId: string, state: string, attempt: number) => void;
 
   addTab: () => void;
   closeTab: (id: string) => void;
@@ -147,7 +156,7 @@ interface AppState {
   closeAddCmd: () => void;
   openEditCmd: (paneId: string) => void;
   closeEditCmd: () => void;
-  openSettings: () => void;
+  openSettings: (section?: string) => void;
   closeSettings: () => void;
 }
 
@@ -246,9 +255,11 @@ export const useStore = create<AppState>((set, get) => {
     snapshots: [],
     runtime: {},
     stats: {},
+    claudeSessions: {},
+    sshStatus: {},
     focusedPaneId: null,
     shells: [],
-    ui: { addCmdOpen: false, addCmdSlot: null, settingsOpen: false, editPaneId: null },
+    ui: { addCmdOpen: false, addCmdSlot: null, settingsOpen: false, settingsSection: null, editPaneId: null },
     hydrated: false,
     savedAt: null,
 
@@ -316,6 +327,11 @@ export const useStore = create<AppState>((set, get) => {
       set({ stats: next });
     },
 
+    setClaudeSessions: (map) => set({ claudeSessions: map }),
+
+    setSshStatus: (paneId, state, attempt) =>
+      set({ sshStatus: { ...get().sshStatus, [paneId]: { state, attempt } } }),
+
     addTab: () => {
       const t = freshTab(
         get().settings.defaultLayout,
@@ -338,10 +354,33 @@ export const useStore = create<AppState>((set, get) => {
 
     setActiveTab: (id) => set({ activeTabId: id }),
 
-    setLayout: (preset) =>
-      commit({
-        tabs: get().tabs.map((t) => (t.id === get().activeTabId ? { ...t, layout: preset } : t)),
-      }),
+    // Force the chosen layout on the active tab. If the tab shows more terminals
+    // than the layout can hold, drop the excess own-references (their processes
+    // keep running in the sidebar) and compact the rest into the available slots.
+    setLayout: (preset) => {
+      const { tabs, activeTabId, panes } = get();
+      const cap = LAYOUTS[preset].capacity;
+      const paneIds = new Set(panes.map((p) => p.id));
+      const newTabs = tabs.map((tab) => {
+        if (tab.id !== activeTabId) return tab;
+        const own = tab.items.filter((i) => paneIds.has(i.paneId));
+        const ownSet = new Set(own.map((i) => i.paneId));
+        // Pinned panes not already referenced here are forced in — they take slots.
+        const pinnedExtras = panes.filter((p) => p.pinned && !ownSet.has(p.id)).length;
+        const room = Math.max(0, cap - pinnedExtras);
+        // Already fits and every item is on-grid → just set the layout.
+        if (own.length <= room && own.every((i) => i.slot < cap)) {
+          return { ...tab, layout: preset };
+        }
+        // Keep the first `room` by slot order; compact them into slots 0..room-1.
+        const kept = [...own]
+          .sort((a, b) => a.slot - b.slot)
+          .slice(0, room)
+          .map((i, idx) => ({ ...i, slot: idx }));
+        return { ...tab, layout: preset, items: kept };
+      });
+      commit({ tabs: newTabs });
+    },
 
     reorderTab: (dragId, targetId) => {
       const { tabs } = get();
@@ -679,7 +718,8 @@ export const useStore = create<AppState>((set, get) => {
     closeAddCmd: () => set({ ui: { ...get().ui, addCmdOpen: false, addCmdSlot: null } }),
     openEditCmd: (paneId) => set({ ui: { ...get().ui, editPaneId: paneId, addCmdOpen: false } }),
     closeEditCmd: () => set({ ui: { ...get().ui, editPaneId: null } }),
-    openSettings: () => set({ ui: { ...get().ui, settingsOpen: true } }),
+    openSettings: (section) =>
+      set({ ui: { ...get().ui, settingsOpen: true, settingsSection: section ?? null } }),
     closeSettings: () => set({ ui: { ...get().ui, settingsOpen: false } }),
   };
 });

@@ -12,6 +12,8 @@ import { TerminalLayer } from './components/TerminalLayer';
 import { AddCmdDialog } from './dialogs/AddCmdDialog';
 import { SettingsWindow } from './settings/SettingsWindow';
 import { useT } from './i18n';
+import { claudeSession, type ClaudeSession } from './ipc/claude';
+import { onSshStatus } from './ipc/ssh';
 
 export default function App() {
   const hydrated = useStore((s) => s.hydrated);
@@ -43,11 +45,41 @@ export default function App() {
     detectShells()
       .then((sh) => useStore.getState().setShells(sh))
       .catch(() => {});
-    let unlisten: (() => void) | undefined;
-    void onPaneStats((list) => useStore.getState().setStats(list)).then((fn) => {
-      unlisten = fn;
-    });
-    return () => unlisten?.();
+    const unlisteners: Array<() => void> = [];
+    void onPaneStats((list) => useStore.getState().setStats(list)).then((fn) =>
+      unlisteners.push(fn)
+    );
+    void onSshStatus((s) =>
+      useStore.getState().setSshStatus(s.paneId, s.state, s.attempt)
+    ).then((fn) => unlisteners.push(fn));
+    return () => unlisteners.forEach((fn) => fn());
+  }, []);
+
+  // Poll Claude Code's real session state for panes that are running Claude.
+  useEffect(() => {
+    if (!IS_TAURI) return;
+    let cancelled = false;
+    const tick = async () => {
+      const s = useStore.getState();
+      const targets = s.panes.filter((p) => s.stats[p.id]?.claude && p.cwd);
+      if (!targets.length) {
+        if (Object.keys(s.claudeSessions).length) s.setClaudeSessions({});
+        return;
+      }
+      const entries = await Promise.all(
+        targets.map(async (p) => [p.id, await claudeSession(p.cwd)] as const)
+      );
+      if (cancelled) return;
+      const map: Record<string, ClaudeSession> = {};
+      for (const [id, sess] of entries) if (sess.found) map[id] = sess;
+      useStore.getState().setClaudeSessions(map);
+    };
+    const iv = window.setInterval(tick, 1500);
+    void tick();
+    return () => {
+      cancelled = true;
+      window.clearInterval(iv);
+    };
   }, []);
 
   // Block webview reload (F5 / Ctrl+R / Ctrl+Shift+R) — a reload would kill every
