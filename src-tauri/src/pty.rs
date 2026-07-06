@@ -17,8 +17,16 @@ use crate::shells;
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum PtyEvent {
-    Data { data: Vec<u8> },
-    Exit { code: i32 },
+    Data {
+        data: Vec<u8>,
+    },
+    Exit {
+        code: i32,
+        /// Human-readable reason when the process failed to start or ended
+        /// abnormally, so the UI can show *why* instead of a bare exit code.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
 }
 
 struct PtySession {
@@ -81,8 +89,13 @@ impl PtyManager {
         for (k, v) in &spec.envs {
             cmd.env(k, v);
         }
-        if spec.set_cwd && !cwd.is_empty() && std::path::Path::new(&cwd).is_dir() {
-            cmd.cwd(&cwd);
+        // Start in the requested directory when it exists, otherwise fall back
+        // to the user's home dir — a stale/removed path must never leave the
+        // shell in a bad cwd (or, on some platforms, abort the spawn).
+        if spec.set_cwd {
+            if let Some(dir) = effective_cwd(&cwd) {
+                cmd.cwd(dir);
+            }
         }
 
         let mut child = pair
@@ -145,8 +158,11 @@ impl PtyManager {
         let sessions = self.sessions.clone();
         let pids = self.pids.clone();
         std::thread::spawn(move || {
-            let code = child.wait().map(|s| s.exit_code() as i32).unwrap_or(-1);
-            let _ = exit_ch.send(PtyEvent::Exit { code });
+            let (code, error) = match child.wait() {
+                Ok(s) => (s.exit_code() as i32, None),
+                Err(e) => (-1, Some(format!("tiến trình lỗi: {e}"))),
+            };
+            let _ = exit_ch.send(PtyEvent::Exit { code, error });
             sessions.lock().unwrap().remove(&pane_id);
             pids.lock().unwrap().remove(&pane_id);
         });
@@ -195,4 +211,24 @@ impl Default for PtyManager {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The directory the shell should start in: the requested `cwd` when it's an
+/// existing directory, otherwise the user's home directory. Returns `None` only
+/// if neither exists, in which case the child inherits the process cwd.
+fn effective_cwd(requested: &str) -> Option<std::path::PathBuf> {
+    let p = std::path::Path::new(requested);
+    if !requested.is_empty() && p.is_dir() {
+        return Some(p.to_path_buf());
+    }
+    home_dir().filter(|h| h.is_dir())
+}
+
+/// The current user's home directory (`$HOME` on Unix, `%USERPROFILE%` on Windows).
+fn home_dir() -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    let var = std::env::var_os("USERPROFILE");
+    #[cfg(unix)]
+    let var = std::env::var_os("HOME");
+    var.filter(|v| !v.is_empty()).map(std::path::PathBuf::from)
 }

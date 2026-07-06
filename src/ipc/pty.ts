@@ -3,7 +3,9 @@ import type { ShellKind } from '../types';
 import { IS_TAURI } from './env';
 
 /** Mirror of the Rust `PtyEvent` enum (serde tag = "type"). */
-type PtyEvent = { type: 'data'; data: number[] } | { type: 'exit'; code: number };
+type PtyEvent =
+  | { type: 'data'; data: number[] }
+  | { type: 'exit'; code: number; error?: string };
 
 export interface SpawnOpts {
   paneId: string;
@@ -14,7 +16,7 @@ export interface SpawnOpts {
   command?: string;
   shellPath?: string;
   onData: (bytes: Uint8Array) => void;
-  onExit: (code: number) => void;
+  onExit: (code: number, error?: string) => void;
 }
 
 export async function spawnPty(o: SpawnOpts): Promise<void> {
@@ -22,7 +24,7 @@ export async function spawnPty(o: SpawnOpts): Promise<void> {
   const channel = new Channel<PtyEvent>();
   channel.onmessage = (msg) => {
     if (msg.type === 'data') o.onData(new Uint8Array(msg.data));
-    else o.onExit(msg.code);
+    else o.onExit(msg.code, msg.error);
   };
   await invoke('spawn_pty', {
     paneId: o.paneId,

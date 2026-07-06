@@ -9,6 +9,7 @@ import {
   fsRemove,
   fsHome,
   sftpConnect,
+  sftpHome,
   sftpList,
   sftpMkdir,
   sftpRename,
@@ -69,6 +70,8 @@ export function FileBrowser({ pane }: { pane: Pane }) {
   const [biPlan, setBiPlan] = useState<{ plan: BiSyncPlan; local: string; remote: string } | null>(null);
   const [biSummary, setBiSummary] = useState<BiSyncSummary | null>(null);
   const [localHome, setLocalHome] = useState<string | null>(null);
+  // Remote start dir resolved after connect (config path if it exists, else ~).
+  const [remoteStart, setRemoteStart] = useState<string | null>(null);
   const [leftKey, setLeftKey] = useState(0);
   const [rightKey, setRightKey] = useState(0);
 
@@ -97,7 +100,22 @@ export function FileBrowser({ pane }: { pane: Pane }) {
     if (hasRemote && pane.ssh && IS_TAURI) {
       setConn('connecting');
       sftpConnect(pane.id, pane.ssh)
-        .then(() => alive && setConn('ready'))
+        .then(async () => {
+          if (!alive) return;
+          // Resolve the start dir: prefer the saved/config path, else fall back
+          // to the remote home (~) so a missing path never breaks the panel.
+          const prefer = pane.browserRemotePath ?? pane.ssh?.remotePath ?? '';
+          let start = prefer || '/';
+          try {
+            start = await sftpHome(pane.id, prefer);
+          } catch {
+            /* keep the fallback */
+          }
+          if (!alive) return;
+          remoteCwd.current = start;
+          setRemoteStart(start);
+          setConn('ready');
+        })
         .catch((e) => {
           if (!alive) return;
           setConn('error');
@@ -457,9 +475,10 @@ export function FileBrowser({ pane }: { pane: Pane }) {
         {hasRemote ? (
           conn === 'ready' ? (
             <FilePanel
+              key={`remote-${remoteStart ?? ''}`}
               title={t('fb.remote', { user: pane.ssh?.user ?? '', host: pane.ssh?.host ?? '' })}
               backend={remoteBackend}
-              initialPath={pane.browserRemotePath ?? pane.ssh?.remotePath ?? '/'}
+              initialPath={remoteStart ?? pane.browserRemotePath ?? pane.ssh?.remotePath ?? '/'}
               accent="var(--accent)"
               transferLabel={t('fb.download')}
               refreshKey={rightKey}

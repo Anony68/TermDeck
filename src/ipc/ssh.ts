@@ -3,7 +3,9 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 import type { SshConfig } from '../types';
 import { IS_TAURI } from './env';
 
-type PtyEvent = { type: 'data'; data: number[] } | { type: 'exit'; code: number };
+type PtyEvent =
+  | { type: 'data'; data: number[] }
+  | { type: 'exit'; code: number; error?: string };
 
 export interface SpawnSshOpts {
   paneId: string;
@@ -12,7 +14,7 @@ export interface SpawnSshOpts {
   rows: number;
   command?: string;
   onData: (bytes: Uint8Array) => void;
-  onExit: (code: number) => void;
+  onExit: (code: number, error?: string) => void;
 }
 
 export async function spawnSsh(o: SpawnSshOpts): Promise<void> {
@@ -20,7 +22,7 @@ export async function spawnSsh(o: SpawnSshOpts): Promise<void> {
   const channel = new Channel<PtyEvent>();
   channel.onmessage = (msg) => {
     if (msg.type === 'data') o.onData(new Uint8Array(msg.data));
-    else o.onExit(msg.code);
+    else o.onExit(msg.code, msg.error);
   };
   await invoke('spawn_ssh', {
     paneId: o.paneId,
@@ -117,6 +119,11 @@ export async function sftpConnect(paneId: string, cfg: SshConfig): Promise<void>
 export function sftpDisconnect(paneId: string): void {
   if (!IS_TAURI) return;
   void invoke('sftp_disconnect', { paneId });
+}
+/** Resolve the remote start dir: `prefer` if it exists, else the login home (~). */
+export async function sftpHome(paneId: string, prefer: string): Promise<string> {
+  if (!IS_TAURI) return prefer || '/';
+  return await invoke('sftp_home', { paneId, prefer });
 }
 export async function sftpList(paneId: string, path: string): Promise<FileEntry[]> {
   return await invoke('sftp_list', { paneId, path });

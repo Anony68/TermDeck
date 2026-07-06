@@ -188,6 +188,7 @@ pub fn run() {
             ssh::secret_delete,
             ssh::sftp_connect,
             ssh::sftp_disconnect,
+            ssh::sftp_home,
             ssh::sftp_list,
             ssh::sftp_mkdir,
             ssh::sftp_rename,

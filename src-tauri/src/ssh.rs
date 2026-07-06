@@ -179,6 +179,17 @@ fn check_host_key(app: &AppHandle, sess: &Session, host: &str, port: u16) -> Res
 
 // ---------- connection ----------
 
+/// Expand a leading `~` / `~/` to the user's home directory. Other paths pass
+/// through unchanged. (libssh2 does not do tilde expansion itself.)
+fn expand_tilde(p: &str) -> String {
+    if p == "~" || p.starts_with("~/") || p.starts_with("~\\") {
+        if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+            return format!("{home}{}", &p[1..]);
+        }
+    }
+    p.to_string()
+}
+
 fn connect(app: &AppHandle, pane_id: &str, cfg: &SshConfig) -> Result<Session, String> {
     let addr = format!("{}:{}", cfg.host, cfg.port);
     let sock = addr
@@ -208,10 +219,18 @@ fn connect(app: &AppHandle, pane_id: &str, cfg: &SshConfig) -> Result<Session, S
         let key = cfg.key_path.clone().unwrap_or_default();
         if key.is_empty() {
             auth_err = Some("chưa chọn file private key".into());
-        } else if let Err(e) =
-            sess.userauth_pubkey_file(&cfg.user, None, Path::new(&key), secret.as_deref())
-        {
-            auth_err = Some(format!("xác thực bằng key thất bại: {e}"));
+        } else {
+            // libssh2 takes the path literally — expand a leading `~` ourselves,
+            // and check the file exists so a wrong path gives a clear reason
+            // instead of an opaque auth failure.
+            let key = expand_tilde(&key);
+            if !Path::new(&key).is_file() {
+                auth_err = Some(format!("không tìm thấy file private key: {key}"));
+            } else if let Err(e) =
+                sess.userauth_pubkey_file(&cfg.user, None, Path::new(&key), secret.as_deref())
+            {
+                auth_err = Some(format!("xác thực bằng key thất bại: {e}"));
+            }
         }
     } else {
         match &secret {
@@ -272,7 +291,9 @@ pub fn spawn_ssh(
         let fail = |on_event: &Channel<PtyEvent>, msg: String| {
             let line = format!("\r\n\x1b[31m{msg}\x1b[0m\r\n");
             let _ = on_event.send(PtyEvent::Data { data: line.into_bytes() });
-            let _ = on_event.send(PtyEvent::Exit { code: -1 });
+            // Carry the reason on the Exit too: the terminal is swapped for the
+            // "exited" overlay, so a Data-only message would never be seen.
+            let _ = on_event.send(PtyEvent::Exit { code: -1, error: Some(msg) });
         };
         let note = |on_event: &Channel<PtyEvent>, msg: String| {
             let line = format!("\r\n\x1b[33m{msg}\x1b[0m\r\n");
@@ -292,9 +313,10 @@ pub fn spawn_ssh(
                     }
                     attempt += 1;
                     if attempt > SSH_MAX_RECONNECT {
-                        note(&on_event, "Không kết nối lại được — đã dừng.".into());
+                        let msg = "Không kết nối lại được — đã dừng.".to_string();
+                        note(&on_event, msg.clone());
                         status("disconnected", attempt);
-                        let _ = on_event.send(PtyEvent::Exit { code: -1 });
+                        let _ = on_event.send(PtyEvent::Exit { code: -1, error: Some(msg) });
                         break;
                     }
                     status("reconnecting", attempt);
@@ -344,15 +366,16 @@ pub fn spawn_ssh(
             match outcome {
                 IoExit::Kill => break,
                 IoExit::Clean(code) => {
-                    let _ = on_event.send(PtyEvent::Exit { code });
+                    let _ = on_event.send(PtyEvent::Exit { code, error: None });
                     break;
                 }
                 IoExit::Died => {
                     attempt += 1;
                     if attempt > SSH_MAX_RECONNECT {
-                        note(&on_event, "Mất kết nối — đã thử lại nhiều lần, dừng.".into());
+                        let msg = "Mất kết nối — đã thử lại nhiều lần, dừng.".to_string();
+                        note(&on_event, msg.clone());
                         status("disconnected", attempt);
-                        let _ = on_event.send(PtyEvent::Exit { code: -1 });
+                        let _ = on_event.send(PtyEvent::Exit { code: -1, error: Some(msg) });
                         break;
                     }
                     note(&on_event, format!("Mất kết nối — đang thử lại ({attempt})…"));
@@ -506,6 +529,49 @@ pub async fn sftp_connect(
 pub fn sftp_disconnect(state: tauri::State<SshManager>, pane_id: String) -> Result<(), String> {
     state.sftps.lock().unwrap().remove(&pane_id);
     Ok(())
+}
+
+/// Resolve the remote directory the Browser pane should open at: the preferred
+/// path (config / last-used) when it exists and is a directory, otherwise the
+/// login home (`~`) — mirroring how the terminal falls back to home for a
+/// missing cwd. `prefer` may be empty, `~`, or start with `~/`.
+#[tauri::command(rename_all = "camelCase")]
+pub fn sftp_home(
+    state: tauri::State<SshManager>,
+    pane_id: String,
+    prefer: String,
+) -> Result<String, String> {
+    let conn = get_sftp(&state, &pane_id)?;
+    let conn = conn.lock().unwrap();
+
+    // Remote home: realpath(".") is the login/current dir. Fall back to "/".
+    let home = conn
+        .sftp
+        .realpath(Path::new("."))
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "/".to_string());
+
+    let prefer = prefer.trim();
+    let target = if prefer.is_empty() || prefer == "~" {
+        home.clone()
+    } else if let Some(rest) = prefer.strip_prefix("~/") {
+        format!("{}/{}", home.trim_end_matches('/'), rest)
+    } else {
+        prefer.to_string()
+    };
+
+    // Use the preferred path only if it exists and is a directory; else home.
+    let usable = conn
+        .sftp
+        .stat(Path::new(&target))
+        .map(|st| st.is_dir())
+        .unwrap_or(false);
+    let chosen = if usable { target } else { home };
+    Ok(conn
+        .sftp
+        .realpath(Path::new(&chosen))
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or(chosen))
 }
 
 fn perms_string(mode: u32, is_dir: bool, is_symlink: bool) -> String {

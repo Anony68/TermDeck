@@ -1,5 +1,11 @@
-//! Detect and build launch specs for the shells TermDeck supports on Windows:
-//! PowerShell, CMD, Git Bash, and WSL.
+//! Detect and build launch specs for the shells TermDeck supports.
+//!
+//! On Windows: PowerShell, CMD, Git Bash, and WSL.
+//!
+//! On macOS/Linux none of CMD/Git Bash/WSL exist (Git Bash ships only as part
+//! of "Git for Windows"), so the `git-bash` slot is repurposed as the native
+//! default terminal — the user's login shell (`$SHELL`, else zsh/bash) — and
+//! `powershell` maps to `pwsh` when installed. CMD and WSL report unavailable.
 
 use serde::Serialize;
 use std::path::Path;
@@ -55,6 +61,11 @@ pub fn resolve(kind: &str, path_override: Option<&str>) -> Option<String> {
             return Some(p.to_string());
         }
     }
+    resolve_native(kind)
+}
+
+#[cfg(windows)]
+fn resolve_native(kind: &str) -> Option<String> {
     let sysroot = env("SystemRoot").unwrap_or_else(|| "C:\\Windows".to_string());
     match kind {
         "cmd" => first_existing(&[
@@ -80,12 +91,46 @@ pub fn resolve(kind: &str, path_override: Option<&str>) -> Option<String> {
     }
 }
 
+#[cfg(unix)]
+fn resolve_native(kind: &str) -> Option<String> {
+    match kind {
+        // Git Bash is Windows-only; on macOS/Linux this slot launches the
+        // native default terminal (the user's login shell).
+        "git-bash" => native_default_shell(),
+        // PowerShell Core (`pwsh`) is installable via Homebrew; detect it.
+        "powershell" => which("pwsh"),
+        // CMD and WSL have no equivalent outside Windows.
+        _ => None,
+    }
+}
+
+/// The user's default terminal shell on macOS/Linux: `$SHELL`, else zsh/bash/sh.
+#[cfg(unix)]
+fn native_default_shell() -> Option<String> {
+    first_existing(&[
+        env("SHELL"),
+        Some("/bin/zsh".to_string()),
+        Some("/bin/bash".to_string()),
+        Some("/bin/sh".to_string()),
+    ])
+}
+
 /// Detect every supported shell so the UI can enable/disable options.
 pub fn detect_all() -> Vec<ShellInfo> {
+    // Labels differ per platform: on macOS/Linux the "git-bash" slot is the
+    // native Terminal. The frontend mirrors this in `shells.ts`.
+    #[cfg(windows)]
     let defs = [
         ("powershell", "PowerShell"),
         ("cmd", "CMD"),
         ("git-bash", "Git Bash"),
+        ("wsl", "WSL"),
+    ];
+    #[cfg(unix)]
+    let defs = [
+        ("powershell", "PowerShell"),
+        ("cmd", "CMD"),
+        ("git-bash", "Terminal"),
         ("wsl", "WSL"),
     ];
     defs.iter()
@@ -109,7 +154,32 @@ pub fn build_command(
 ) -> Result<SpawnSpec, String> {
     let exe = resolve(kind, path_override)
         .ok_or_else(|| format!("Không tìm thấy shell '{kind}' trên máy này"))?;
+    build_spec(kind, exe, cwd)
+}
 
+#[cfg(unix)]
+fn build_spec(kind: &str, exe: String, _cwd: &str) -> Result<SpawnSpec, String> {
+    let spec = match kind {
+        // Native default terminal (login shell so ~/.zprofile etc. are sourced).
+        "git-bash" => SpawnSpec {
+            exe,
+            args: vec!["-l".to_string()],
+            envs: vec![("TERM".to_string(), "xterm-256color".to_string())],
+            set_cwd: true,
+        },
+        "powershell" => SpawnSpec {
+            exe,
+            args: vec!["-NoLogo".to_string()],
+            envs: vec![],
+            set_cwd: true,
+        },
+        other => return Err(format!("Shell không hỗ trợ: '{other}'")),
+    };
+    Ok(spec)
+}
+
+#[cfg(windows)]
+fn build_spec(kind: &str, exe: String, cwd: &str) -> Result<SpawnSpec, String> {
     let spec = match kind {
         "wsl" => {
             let mut args = Vec::new();

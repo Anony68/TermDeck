@@ -45,6 +45,8 @@ const MAX_SNAPSHOTS = 12;
 interface RuntimeInfo {
   status: PaneStatus;
   exitCode?: number;
+  /** Why the process failed/ended abnormally, shown on the exited overlay. */
+  exitError?: string;
   nonce: number;
   runOnSpawn: boolean;
   /** When the current process started (ms epoch) — for uptime. */
@@ -135,7 +137,7 @@ interface AppState {
   setBrowserPath: (paneId: string, side: 'local' | 'remote', path: string) => void;
   restartPane: (paneId: string) => void;
   togglePinPane: (paneId: string) => void;
-  setPaneStatus: (paneId: string, status: PaneStatus, exitCode?: number) => void;
+  setPaneStatus: (paneId: string, status: PaneStatus, exitCode?: number, exitError?: string) => void;
   consumeRunOnSpawn: (paneId: string) => boolean;
   setFocusedPane: (paneId: string | null) => void;
 
@@ -585,11 +587,11 @@ export const useStore = create<AppState>((set, get) => {
       });
     },
 
-    setPaneStatus: (paneId, status, exitCode) => {
+    setPaneStatus: (paneId, status, exitCode, exitError) => {
       const { runtime } = get();
       const prev =
         runtime[paneId] ?? { status: 'running', nonce: 0, runOnSpawn: false, startedAt: Date.now() };
-      set({ runtime: { ...runtime, [paneId]: { ...prev, status, exitCode } } });
+      set({ runtime: { ...runtime, [paneId]: { ...prev, status, exitCode, exitError } } });
     },
 
     consumeRunOnSpawn: (paneId) => {

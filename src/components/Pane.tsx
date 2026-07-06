@@ -286,10 +286,16 @@ export function Pane({ pane }: { pane: PaneModel }) {
         <FileBrowser pane={pane} />
       ) : status === 'exited' ? (
         <div style={{ flex: 1, display: 'grid', placeItems: 'center', minHeight: 0 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-            <div style={{ font: '400 11.5px var(--font-mono)', color: 'var(--text-muted)' }}>
-              {t('pane.exitedMsg', { code: runtime?.exitCode ?? 0 })}
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, maxWidth: 420, padding: '0 16px' }}>
+            {runtime?.exitError ? (
+              <div style={{ font: '400 11.5px var(--font-mono)', color: 'var(--danger)', textAlign: 'center', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {runtime.exitError}
+              </div>
+            ) : (
+              <div style={{ font: '400 11.5px var(--font-mono)', color: 'var(--text-muted)' }}>
+                {t('pane.exitedMsg', { code: runtime?.exitCode ?? 0 })}
+              </div>
+            )}
             <button className="outline-accent-btn" onClick={() => restartPane(pane.id)}>
               {t('pane.reopenPath')}
             </button>

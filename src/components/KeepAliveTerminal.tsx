@@ -178,8 +178,8 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
         markPaneActivity(paneId);
         term.write(bytes);
       },
-      onExit: (code: number) => {
-        if (!disposed) setPaneStatus(paneId, 'exited', code);
+      onExit: (code: number, error?: string) => {
+        if (!disposed) setPaneStatus(paneId, 'exited', code, error);
       },
     };
     const spawning =
@@ -210,8 +210,9 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
             ...common,
           });
     spawning.catch((e) => {
-      term.writeln(`\r\n\x1b[31m${t('term.connError', { err: String(e) })}\x1b[0m`);
-      setPaneStatus(paneId, 'exited', -1);
+      const err = t('term.connError', { err: String(e) });
+      term.writeln(`\r\n\x1b[31m${err}\x1b[0m`);
+      setPaneStatus(paneId, 'exited', -1, err);
     });
 
     const onData = term.onData((d) => {
