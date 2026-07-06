@@ -12,6 +12,7 @@ import { markPaneActivity, clearPaneActivity } from '../state/activity';
 import { useSlots } from '../state/slots';
 import { getTerminalHolder } from '../terminalHolder';
 import { IS_TAURI } from '../ipc/env';
+import { IS_MAC } from '../shells';
 import { FONT_PX } from '../fontSizes';
 import { ContextMenu } from './ContextMenu';
 
@@ -125,16 +126,26 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
     term.loadAddon(new WebLinksAddon());
     term.open(host);
 
-    // Windows Terminal-style Ctrl+C / Ctrl+V: Ctrl+C copies when there's a
-    // selection, otherwise falls through to the shell (SIGINT); Ctrl+V pastes.
+    // Copy/paste + interrupt via the platform's primary modifier: Cmd on macOS,
+    // Ctrl elsewhere. C copies when there's a selection, otherwise sends ^C
+    // (SIGINT) to interrupt the running task; V pastes. On macOS this makes
+    // Cmd+C interrupt tasks — plain Ctrl+C still reaches the shell as SIGINT too.
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type !== 'keydown' || !e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return true;
+      if (e.type !== 'keydown') return true;
+      const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+      const otherMods = (IS_MAC ? e.ctrlKey : e.metaKey) || e.altKey || e.shiftKey;
+      if (!mod || otherMods) return true;
       const key = e.key.toLowerCase();
-      if (key === 'c' && term.hasSelection()) {
+      if (key === 'c') {
         e.preventDefault();
-        const sel = term.getSelection();
-        void copyText(sel).then(() => term.clearSelection());
-        return false; // consumed as copy — don't send ^C
+        if (term.hasSelection()) {
+          const sel = term.getSelection();
+          void copyText(sel).then(() => term.clearSelection());
+        } else {
+          const cur = paneRef.current;
+          if (cur) writeSession(cur, '\x03'); // no selection → SIGINT
+        }
+        return false;
       }
       if (key === 'v') {
         e.preventDefault();
@@ -144,7 +155,7 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
         });
         return false; // consumed as paste
       }
-      return true; // Ctrl+C with no selection (and everything else) → shell
+      return true; // everything else → shell
     });
 
     let rafId = 0;
