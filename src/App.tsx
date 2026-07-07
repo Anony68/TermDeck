@@ -3,6 +3,7 @@ import { useStore } from './state/store';
 import { detectShells, onPaneStats } from './ipc/api';
 import { IS_TAURI } from './ipc/env';
 import { LAYOUT_ORDER } from './layouts';
+import { IS_MAC } from './shells';
 import { TitleBar } from './components/TitleBar';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
@@ -94,30 +95,31 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, []);
 
-  // Global keyboard shortcuts.
+  // Global keyboard shortcuts. Primary modifier is Cmd on macOS, Ctrl elsewhere.
+  // Tab switching stays on Ctrl+Tab everywhere (Cmd+Tab is the OS app switcher).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = useStore.getState();
       const k = e.key.toLowerCase();
-      if (e.ctrlKey && !e.shiftKey && k === 't') {
+      const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+      if (mod && !e.shiftKey && k === 't') {
         e.preventDefault();
         s.addTab();
-      } else if (e.ctrlKey && k === 'n') {
+      } else if (mod && k === 'n') {
         e.preventDefault();
         s.openAddCmd();
-      } else if (e.ctrlKey && k === 'w') {
-        if (s.focusedPaneId) {
-          e.preventDefault();
-          s.removePane(s.focusedPaneId);
-        }
+      } else if (mod && k === 'w') {
+        e.preventDefault(); // even unfocused: keep Cmd+W from closing the window
+        if (s.focusedPaneId) s.removePane(s.focusedPaneId);
       } else if (e.ctrlKey && e.key === 'Tab') {
         e.preventDefault();
         const i = s.tabs.findIndex((t) => t.id === s.activeTabId);
         const next = s.tabs[(i + 1) % s.tabs.length];
         if (next) s.setActiveTab(next.id);
-      } else if (e.altKey && /^[1-6]$/.test(e.key)) {
+      } else if (e.altKey && /^Digit[1-6]$/.test(e.code)) {
+        // e.code, not e.key: on macOS Option+digit types a special character.
         e.preventDefault();
-        const preset = LAYOUT_ORDER[parseInt(e.key, 10) - 1];
+        const preset = LAYOUT_ORDER[parseInt(e.code.slice(5), 10) - 1];
         if (preset) s.setLayout(preset);
       }
     };

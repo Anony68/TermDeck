@@ -282,9 +282,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
         </span>
       </div>
 
-      {isBrowser ? (
-        <FileBrowser pane={pane} />
-      ) : status === 'exited' ? (
+      {status === 'exited' ? (
         <div style={{ flex: 1, display: 'grid', placeItems: 'center', minHeight: 0 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, maxWidth: 420, padding: '0 16px' }}>
             {runtime?.exitError ? (
@@ -293,7 +291,9 @@ export function Pane({ pane }: { pane: PaneModel }) {
               </div>
             ) : (
               <div style={{ font: '400 11.5px var(--font-mono)', color: 'var(--text-muted)' }}>
-                {t('pane.exitedMsg', { code: runtime?.exitCode ?? 0 })}
+                {runtime?.exitCode === undefined
+                  ? t('pane.notStarted')
+                  : t('pane.exitedMsg', { code: runtime.exitCode })}
               </div>
             )}
             <button className="outline-accent-btn" onClick={() => restartPane(pane.id)}>
@@ -301,6 +301,8 @@ export function Pane({ pane }: { pane: PaneModel }) {
             </button>
           </div>
         </div>
+      ) : isBrowser ? (
+        <FileBrowser key={runtime?.nonce ?? 0} pane={pane} />
       ) : (
         <div ref={slotRef} style={{ flex: 1, minHeight: 0, minWidth: 0 }} />
       )}

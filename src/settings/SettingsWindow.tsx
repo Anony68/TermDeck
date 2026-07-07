@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../state/store';
-import { SHELL_ORDER, SHELLS } from '../shells';
+import { IS_MAC, SHELL_ORDER, SHELLS } from '../shells';
 import { LAYOUT_ORDER, LAYOUTS } from '../layouts';
 import { PresetIcon } from '../components/PresetIcon';
 import { FONT_ORDER, FONT_PX } from '../fontSizes';
@@ -575,12 +575,14 @@ function ShellsSection() {
 
 function KeysSection() {
   const t = useT();
+  const mod = IS_MAC ? '⌘' : 'Ctrl';
+  const alt = IS_MAC ? '⌥' : 'Alt';
   const keys: Array<[string, string]> = [
-    ['Ctrl + T', t('set.keys.newTab')],
-    ['Ctrl + N', t('set.keys.newTerminal')],
-    ['Ctrl + W', t('set.keys.closeTerminal')],
+    [`${mod} + T`, t('set.keys.newTab')],
+    [`${mod} + N`, t('set.keys.newTerminal')],
+    [`${mod} + W`, t('set.keys.closeTerminal')],
     ['Ctrl + Tab', t('set.keys.switchTab')],
-    ['Alt + 1..6', t('set.keys.changeLayout')],
+    [`${alt} + 1..6`, t('set.keys.changeLayout')],
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

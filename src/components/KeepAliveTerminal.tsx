@@ -108,7 +108,10 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
   useEffect(() => {
     const p = paneRef.current;
     if (!p) return;
-    const { setPaneStatus, consumeRunOnSpawn } = useStore.getState();
+    const { setPaneStatus, consumeRunOnSpawn, runtime } = useStore.getState();
+    // Restored in the stopped state (autoStart off): don't spawn anything.
+    // Starting it later (restartPane) bumps the nonce and re-runs this effect.
+    if ((runtime[paneId]?.status ?? 'running') !== 'running') return;
 
     const term = new Terminal({
       fontFamily: "'JetBrains Mono', monospace",

@@ -25,11 +25,13 @@ export function Sidebar() {
   const stats = useStore((s) => s.stats);
   const showPaneInTab = useStore((s) => s.showPaneInTab);
   const stopPane = useStore((s) => s.stopPane);
+  const stopAllPanes = useStore((s) => s.stopAllPanes);
   const restartPane = useStore((s) => s.restartPane);
   const removePane = useStore((s) => s.removePane);
   const togglePinPane = useStore((s) => s.togglePinPane);
   const openEditCmd = useStore((s) => s.openEditCmd);
   const openAddCmd = useStore((s) => s.openAddCmd);
+  const addTempPane = useStore((s) => s.addTempPane);
   const openSettings = useStore((s) => s.openSettings);
   const t = useT();
 
@@ -44,13 +46,19 @@ export function Sidebar() {
 
   const isUngrouped = (p: Pane) => !p.projectId || !projects.some((pr) => pr.id === p.projectId);
 
-  // Base = query + type filters (project filter applied after, so chip counts are stable).
-  const base = panes.filter(
+  const runningCount = panes.filter(
+    (p) => kindOf(p) !== 'browser' && (runtime[p.id]?.status ?? 'running') === 'running'
+  ).length;
+
+  // queryBase = query filter only. Type-chip counts use this so each type keeps
+  // its true count regardless of which type is currently selected.
+  const queryBase = panes.filter(
     (c) =>
-      (typeFilter === 'all' || kindOf(c) === typeFilter) &&
-      (c.name.toLowerCase().includes(query.toLowerCase()) ||
-        c.cwd.toLowerCase().includes(query.toLowerCase()))
+      c.name.toLowerCase().includes(query.toLowerCase()) ||
+      c.cwd.toLowerCase().includes(query.toLowerCase())
   );
+  // Base = query + type filters (project filter applied after, so chip counts are stable).
+  const base = queryBase.filter((c) => typeFilter === 'all' || kindOf(c) === typeFilter);
   const noneCount = base.filter(isUngrouped).length;
   const filtered = base.filter((p) =>
     projectFilter === 'all'
@@ -135,6 +143,11 @@ export function Sidebar() {
                 📌
               </span>
             )}
+            {c.ephemeral && (
+              <span title={t('sidebar.tempBadge')} style={{ fontSize: 10, flex: 'none' }}>
+                ⚡
+              </span>
+            )}
           </div>
           <div
             style={{
@@ -179,19 +192,39 @@ export function Sidebar() {
         minHeight: 0,
       }}
     >
-      <div
-        style={{
-          padding: '12px 12px 8px',
-          font: '600 10.5px var(--font-ui)',
-          color: 'var(--text-muted)',
-          letterSpacing: '0.08em',
-        }}
-      >
-        {t('sidebar.title')}
+      <div style={{ padding: '12px 12px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span
+          style={{
+            font: '600 10.5px var(--font-ui)',
+            color: 'var(--text-muted)',
+            letterSpacing: '0.08em',
+            flex: 1,
+          }}
+        >
+          {t('sidebar.title')}
+        </span>
+        {runningCount > 0 && (
+          <button
+            className="link-btn"
+            title={t('sidebar.stopAllTitle')}
+            style={{ color: 'var(--danger)', borderColor: 'var(--danger)', padding: '3px 8px', background: 'transparent' }}
+            onClick={stopAllPanes}
+          >
+            {t('sidebar.stopAll')} {runningCount}
+          </button>
+        )}
       </div>
-      <div style={{ padding: '0 12px 8px' }}>
-        <button className="accent-btn" style={{ width: '100%', justifyContent: 'center' }} onClick={() => openAddCmd()}>
+      <div style={{ padding: '0 12px 8px', display: 'flex', gap: 6 }}>
+        <button className="accent-btn" style={{ flex: 1, justifyContent: 'center' }} onClick={() => openAddCmd()}>
           {t('sidebar.newTerminal')}
+        </button>
+        <button
+          className="link-btn"
+          title={t('sidebar.tempTerminalTitle')}
+          onClick={addTempPane}
+          style={{ padding: '0 10px', flex: 'none' }}
+        >
+          {t('sidebar.tempTerminal')}
         </button>
       </div>
       <div style={{ margin: '2px 12px 8px', display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -208,7 +241,7 @@ export function Sidebar() {
       {/* Type filter */}
       <div style={{ display: 'flex', gap: 4, padding: '0 12px 8px' }}>
         {TYPE_CHIPS.map((c) => {
-          const n = c.k === 'all' ? base.length : base.filter((p) => kindOf(p) === c.k).length;
+          const n = c.k === 'all' ? queryBase.length : queryBase.filter((p) => kindOf(p) === c.k).length;
           return (
             <button
               key={c.k}

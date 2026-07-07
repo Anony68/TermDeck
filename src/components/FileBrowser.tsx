@@ -40,7 +40,11 @@ import {
   type BiSyncSummary,
 } from './sync';
 import { IS_TAURI } from '../ipc/env';
+import { IS_WIN } from '../shells';
 import { useT } from '../i18n';
+
+/** Local filesystem separator: '\' on Windows, '/' on macOS/Linux. */
+const LOCAL_SEP = IS_WIN ? '\\' : '/';
 
 type Conn = 'connecting' | 'ready' | 'error' | 'local-only';
 /** Sync direction: 'up' = local ▶ remote, 'down' = remote ▶ local. */
@@ -138,7 +142,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
   // Stable across re-renders (Pane re-renders every second for stats/uptime);
   // otherwise FilePanel's load effect would re-fire and reset path + selection.
   const localBackend = useMemo<FsBackend>(
-    () => ({ list: fsList, mkdir: fsMkdir, rename: fsRename, remove: fsRemove, sep: '\\' }),
+    () => ({ list: fsList, mkdir: fsMkdir, rename: fsRename, remove: fsRemove, home: fsHome, sep: LOCAL_SEP }),
     []
   );
   const remoteBackend = useMemo<FsBackend>(
@@ -149,6 +153,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
       remove: (p, d) => sftpRemove(pane.id, p, d),
       chmod: (p, m) => sftpChmod(pane.id, p, m),
       search: (root, q) => sftpSearch(pane.id, root, q),
+      home: () => sftpHome(pane.id, ''),
       sep: '/',
     }),
     [pane.id]
@@ -184,7 +189,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
 
   const uploadOps: TransferOps = {
     srcList: fsList,
-    srcSep: '\\',
+    srcSep: LOCAL_SEP,
     dstList: (d) => sftpList(pane.id, d),
     dstSep: '/',
     dstMkdir: (d) => sftpMkdir(pane.id, d),
@@ -194,7 +199,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
     srcList: (d) => sftpList(pane.id, d),
     srcSep: '/',
     dstList: fsList,
-    dstSep: '\\',
+    dstSep: LOCAL_SEP,
     dstMkdir: fsMkdir,
     doTransfer: (s, d) => sftpDownload(pane.id, s, d),
   };
@@ -300,7 +305,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
   // 'down' = remote ▶ local (download). Both delete extras on the target.
   const upSyncOps: SyncOps = {
     srcList: fsList,
-    srcSep: '\\',
+    srcSep: LOCAL_SEP,
     dstList: (d) => sftpList(pane.id, d),
     dstSep: '/',
     dstMkdir: (d) => sftpMkdir(pane.id, d),
@@ -311,7 +316,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
     srcList: (d) => sftpList(pane.id, d),
     srcSep: '/',
     dstList: fsList,
-    dstSep: '\\',
+    dstSep: LOCAL_SEP,
     dstMkdir: fsMkdir,
     dstRemove: fsRemove,
     doTransfer: (s, d) => sftpDownload(pane.id, s, d),
@@ -343,7 +348,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
     remoteMkdir: (d) => sftpMkdir(pane.id, d),
     upload: (l, r) => sftpUpload(pane.id, l, r),
     download: (r, l) => sftpDownload(pane.id, r, l),
-    localSep: '\\',
+    localSep: LOCAL_SEP,
     remoteSep: '/',
   };
   const onBiSyncClick = async () => {

@@ -50,6 +50,8 @@ export interface Pane {
   /** Last-visited directories of a 'browser' pane, restored on reopen. */
   browserLocalPath?: string;
   browserRemotePath?: string;
+  /** One-shot temp terminal: never persisted, auto-removed when its process stops. */
+  ephemeral?: boolean;
 }
 
 /** A saved project (a working folder) used to group and quick-pick terminals. */

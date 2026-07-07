@@ -13,6 +13,8 @@ export interface FsBackend {
   chmod?: (path: string, mode: number) => Promise<void>;
   /** Recursive search from a root (remote SFTP only; absent for local). */
   search?: (root: string, query: string) => Promise<Array<{ path: string; name: string; isDir: boolean }>>;
+  /** Resolve the home directory, so "~" works in the path bar. */
+  home?: () => Promise<string>;
   /** Path separator + join, so local (\\) and remote (/) behave correctly. */
   sep: string;
 }
@@ -145,6 +147,18 @@ export function FilePanel({
   }, []);
 
   const go = (p: string) => setPath(p);
+  // Typed path: expand a leading "~" to the home directory (local or remote).
+  const goTyped = async (raw: string) => {
+    let p = raw.trim();
+    if (backend.home && (p === '~' || p.startsWith('~/') || p.startsWith('~\\'))) {
+      const home = await backend.home().catch(() => '');
+      if (home) {
+        const rest = p.slice(2);
+        p = rest ? joinPath(home, rest, backend.sep) : home;
+      }
+    }
+    go(p);
+  };
   const goParent = () => go(joinPath(path, '..', backend.sep));
   const openEntry = (e: FileEntry) => {
     if (e.isDir) go(joinPath(path, e.name, backend.sep));
@@ -442,7 +456,7 @@ export function FilePanel({
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 setEditingPath(false);
-                go(pathDraft.trim());
+                void goTyped(pathDraft);
               }
               if (e.key === 'Escape') setEditingPath(false);
             }}

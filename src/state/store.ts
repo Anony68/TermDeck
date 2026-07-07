@@ -19,6 +19,7 @@ import { loadPersisted, savePersisted } from '../ipc/persist';
 import { killSession } from '../ipc/session';
 import { secretDelete } from '../ipc/ssh';
 import { isPaneActive } from './activity';
+import { IS_WIN, SHELL_ORDER } from '../shells';
 import { translate } from '../i18n';
 import type { ClaudeSession } from '../ipc/claude';
 
@@ -74,6 +75,8 @@ export interface NewPaneInput {
   ssh?: SshConfig;
   /** Pre-generated id, so the caller can attach a secret before the pane mounts. */
   id?: string;
+  /** One-shot temp terminal: never persisted, auto-removed when it stops. */
+  ephemeral?: boolean;
 }
 
 interface AppState {
@@ -121,6 +124,8 @@ interface AppState {
 
   /** Returns the new pane's id (so callers can attach secrets to it). */
   addPane: (input: NewPaneInput) => string;
+  /** Open a one-shot temp terminal (default shell, home dir) — see Pane.ephemeral. */
+  addTempPane: () => void;
   /** Show an existing cmd in the active tab (restarts it if stopped). */
   showPaneInTab: (paneId: string, slot?: number) => void;
   /** Hide a cmd from the active tab (process keeps running). */
@@ -129,6 +134,8 @@ interface AppState {
   movePaneToSlot: (paneId: string, slot: number) => void;
   /** Stop a cmd's process but keep the cmd (Tắt). */
   stopPane: (paneId: string) => void;
+  /** Stop every running terminal's process; the cmds stay in the list. */
+  stopAllPanes: () => void;
   /** Delete a cmd everywhere and kill its process (Xóa). */
   removePane: (paneId: string) => void;
   renamePane: (paneId: string, name: string) => void;
@@ -196,12 +203,24 @@ function buildRuntime(panes: Pane[], runOnSpawn: boolean): Record<string, Runtim
   const now = Date.now();
   for (const p of panes)
     rt[p.id] = {
-      status: 'running',
+      // Panes with "reopen automatically" off restore stopped — no process is
+      // spawned until the user starts them (saves CPU/RAM on app start).
+      status: p.autoStart === false ? 'exited' : 'running',
       nonce: 0,
       runOnSpawn: runOnSpawn && !!p.presetCommand,
       startedAt: now,
     };
   return rt;
+}
+
+/** Strip temp terminals (and their tab references) from anything that gets saved. */
+function withoutEphemeral(tabs: Tab[], panes: Pane[]): { tabs: Tab[]; panes: Pane[] } {
+  const ids = new Set(panes.filter((p) => p.ephemeral).map((p) => p.id));
+  if (ids.size === 0) return { tabs, panes };
+  return {
+    tabs: tabs.map((t) => ({ ...t, items: t.items.filter((i) => !ids.has(i.paneId)) })),
+    panes: panes.filter((p) => !p.ephemeral),
+  };
 }
 
 // ---- debounced persistence ----
@@ -210,10 +229,11 @@ function scheduleSave(get: () => AppState) {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     const s = get();
+    const { tabs, panes } = withoutEphemeral(s.tabs, s.panes);
     const persisted: PersistedState = {
       version: STORE_VERSION,
-      tabs: s.tabs,
-      panes: s.panes,
+      tabs,
+      panes,
       projects: s.projects,
       activeTabId: s.activeTabId,
       settings: s.settings,
@@ -420,6 +440,7 @@ export const useStore = create<AppState>((set, get) => {
         projectId: input.projectId,
         kind: input.kind ?? 'shell',
         ssh: input.ssh,
+        ephemeral: input.ephemeral || undefined,
       };
       commit({
         panes: [...panes, pane],
@@ -438,6 +459,21 @@ export const useStore = create<AppState>((set, get) => {
         focusedPaneId: pane.id,
       });
       return pane.id;
+    },
+
+    addTempPane: () => {
+      const { shells, panes, settings } = get();
+      const shell =
+        SHELL_ORDER.find((k) => shells.some((sh) => sh.kind === k && sh.available)) ??
+        (IS_WIN ? 'powershell' : 'git-bash');
+      const n = panes.filter((p) => p.ephemeral).length + 1;
+      get().addPane({
+        name: `${translate(settings.language, 'temp.name')} ${n}`,
+        shell,
+        cwd: '',
+        autoStart: false,
+        ephemeral: true,
+      });
     },
 
     showPaneInTab: (paneId, slot) => {
@@ -485,11 +521,46 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     stopPane: (paneId) => {
+      // A temp terminal is one-shot: stopping it deletes it outright.
+      if (get().panes.find((p) => p.id === paneId)?.ephemeral) {
+        get().removePane(paneId);
+        return;
+      }
       killSession(paneId);
       const { runtime } = get();
       const prev =
         runtime[paneId] ?? { nonce: 0, runOnSpawn: false, status: 'running' as PaneStatus, startedAt: Date.now() };
       set({ runtime: { ...runtime, [paneId]: { ...prev, status: 'exited' } } });
+    },
+
+    stopAllPanes: () => {
+      const { panes, tabs, runtime, focusedPaneId } = get();
+      const rt = { ...runtime };
+      const removed = new Set<string>();
+      for (const p of panes) {
+        if ((p.kind ?? 'shell') === 'browser') continue;
+        if ((rt[p.id]?.status ?? 'running') !== 'running') continue;
+        killSession(p.id);
+        if (p.ephemeral) {
+          // Temp terminals are one-shot — stopping deletes them.
+          delete rt[p.id];
+          removed.add(p.id);
+          continue;
+        }
+        const prev =
+          rt[p.id] ?? { nonce: 0, runOnSpawn: false, status: 'running' as PaneStatus, startedAt: Date.now() };
+        rt[p.id] = { ...prev, status: 'exited' };
+      }
+      if (removed.size === 0) {
+        set({ runtime: rt });
+        return;
+      }
+      commit({
+        panes: panes.filter((p) => !removed.has(p.id)),
+        tabs: tabs.map((t) => ({ ...t, items: t.items.filter((i) => !removed.has(i.paneId)) })),
+        runtime: rt,
+        focusedPaneId: focusedPaneId && removed.has(focusedPaneId) ? null : focusedPaneId,
+      });
     },
 
     removePane: (paneId) => {
@@ -588,6 +659,12 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     setPaneStatus: (paneId, status, exitCode, exitError) => {
+      // Temp terminal ended cleanly (e.g. the user typed `exit`) → delete it.
+      // Spawn errors keep the pane so the overlay can show what went wrong.
+      if (status === 'exited' && !exitError && get().panes.find((p) => p.id === paneId)?.ephemeral) {
+        get().removePane(paneId);
+        return;
+      }
       const { runtime } = get();
       const prev =
         runtime[paneId] ?? { status: 'running', nonce: 0, runOnSpawn: false, startedAt: Date.now() };
@@ -633,7 +710,8 @@ export const useStore = create<AppState>((set, get) => {
       }),
 
     captureSnapshot: () => {
-      const { tabs, panes, snapshots } = get();
+      const { snapshots } = get();
+      const { tabs, panes } = withoutEphemeral(get().tabs, get().panes);
       const snap: Snapshot = {
         at: Date.now(),
         tabCount: tabs.length,
@@ -671,11 +749,12 @@ export const useStore = create<AppState>((set, get) => {
 
     exportData: () => {
       const s = get();
+      const { tabs, panes } = withoutEphemeral(s.tabs, s.panes);
       return JSON.stringify(
         {
           version: STORE_VERSION,
-          tabs: s.tabs,
-          panes: s.panes,
+          tabs,
+          panes,
           projects: s.projects,
           activeTabId: s.activeTabId,
           settings: s.settings,

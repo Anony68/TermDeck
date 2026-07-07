@@ -48,7 +48,7 @@ export function TitleBar() {
         <div className="wc" title={t('win.maximize')} style={{ fontSize: 11 }} onClick={() => windowControls.toggleMaximize()}>
           ▢
         </div>
-        <div className="wc close" title={t('win.close')} style={{ fontSize: 12 }} onClick={() => windowControls.close()}>
+        <div className="wc close" title={t('win.close')} style={{ fontSize: 16 }} onClick={() => windowControls.close()}>
           ✕
         </div>
       </div>
