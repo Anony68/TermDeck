@@ -43,6 +43,29 @@ export async function claudeSession(cwd: string): Promise<ClaudeSession> {
   }
 }
 
+/** Plan-usage snapshot (the data behind the CLI's /usage screen). */
+export interface ClaudeUsageWindow {
+  /** Percent of the window's limit already used (0–100). */
+  utilization: number;
+  /** ISO timestamp when the window resets ('' if unknown). */
+  resetsAt: string;
+}
+export interface ClaudeUsage {
+  found: boolean;
+  fiveHour: ClaudeUsageWindow;
+  sevenDay: ClaudeUsageWindow;
+}
+
+export async function claudeUsage(): Promise<ClaudeUsage | null> {
+  if (!IS_TAURI) return null;
+  try {
+    const u = await invoke<ClaudeUsage>('claude_usage');
+    return u.found ? u : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface ClaudeSessionInfo {
   sessionId: string;
   title: string;

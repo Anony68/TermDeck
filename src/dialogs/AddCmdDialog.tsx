@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useStore, findPane } from '../state/store';
 import { SHELL_ORDER, SHELLS } from '../shells';
 import { pickFolder, pickFile } from '../ipc/api';
-import { secretSet, sshConfigHosts, type SshConfigHost } from '../ipc/ssh';
+import { secretSet, sshConfigHosts, parseTlp, type SshConfigHost } from '../ipc/ssh';
 import { ShellBadge } from '../components/ShellBadge';
 import { useT, type TKey } from '../i18n';
 import type { PaneKind, ShellKind, SshConfig } from '../types';
@@ -26,6 +26,9 @@ export function AddCmdDialog() {
   const restartPane = useStore((s) => s.restartPane);
   const projects = useStore((s) => s.projects);
   const addProject = useStore((s) => s.addProject);
+  const recentKeys = useStore((s) => s.recentKeys);
+  const rememberKey = useStore((s) => s.rememberKey);
+  const forgetKey = useStore((s) => s.forgetKey);
   const closeAddCmd = useStore((s) => s.closeAddCmd);
   const closeEditCmd = useStore((s) => s.closeEditCmd);
   const t = useT();
@@ -55,6 +58,18 @@ export function AddCmdDialog() {
   const [user, setUser] = useState(editPane?.ssh?.user ?? '');
   const [auth, setAuth] = useState<'password' | 'key'>(editPane?.ssh?.auth ?? 'password');
   const [keyPath, setKeyPath] = useState(editPane?.ssh?.keyPath ?? '');
+  const [showKeys, setShowKeys] = useState(false);
+  const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
+  const chooseKey = async () => {
+    const f = await pickFile(keyPath || undefined, [
+      { name: 'SSH key', extensions: ['pem', 'ppk', 'key'] },
+      { name: 'All files', extensions: ['*'] },
+    ]);
+    if (f) {
+      setKeyPath(f);
+      rememberKey(f);
+    }
+  };
   const [secret, setSecret] = useState('');
   const [remotePath, setRemotePath] = useState(editPane?.ssh?.remotePath ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +82,22 @@ export function AddCmdDialog() {
     setShowCfg((v) => !v);
     if (cfgHosts === null) setCfgHosts(await sshConfigHosts());
   };
+  const importTlp = async () => {
+    setError(null);
+    const f = await pickFile(undefined, [{ name: 'Bitvise profile', extensions: ['tlp', 'bscp'] }]);
+    if (!f) return;
+    try {
+      const p = await parseTlp(f);
+      setHost(p.host);
+      if (p.port) setPort(String(p.port));
+      if (p.user) setUser(p.user);
+      setAuth('password'); // Bitvise encrypts the password per-machine — can't import it.
+      if (!name.trim() && p.user && p.host) setName(`${p.user}@${p.host}`);
+    } catch (e) {
+      setError(t('dlg.tlpError', { e: String(e) }));
+    }
+  };
+
   const applyCfgHost = (h: SshConfigHost) => {
     setHost(h.hostName || h.alias);
     if (h.port) setPort(String(h.port));
@@ -105,6 +136,7 @@ export function AddCmdDialog() {
       const p = parseInt(port, 10);
       if (!p || p < 1 || p > 65535) return setError(t('dlg.errPort'));
       if (auth === 'key' && !keyPath.trim()) return setError(t('dlg.errKey'));
+      if (auth === 'key') rememberKey(keyPath.trim());
     }
 
     const finalName = name.trim() || defaultName();
@@ -271,9 +303,17 @@ export function AddCmdDialog() {
 
           {isRemote && (
             <>
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative', display: 'flex', gap: 8 }}>
                 <button className="ghost-btn" style={{ padding: '6px 12px', fontSize: 11.5 }} onClick={openSshConfig}>
                   ⤓ {t('dlg.fromSshConfig')} ▾
+                </button>
+                <button
+                  className="ghost-btn"
+                  style={{ padding: '6px 12px', fontSize: 11.5 }}
+                  title={t('dlg.fromTlpHint')}
+                  onClick={importTlp}
+                >
+                  ⤓ {t('dlg.fromTlp')}
                 </button>
                 {showCfg && (
                   <div
@@ -362,23 +402,83 @@ export function AddCmdDialog() {
                   />
                 ) : (
                   <>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, position: 'relative' }}>
                       <input
                         className="field mono"
                         placeholder={t('dlg.keyPath')}
                         value={keyPath}
                         onChange={(e) => setKeyPath(e.target.value)}
                       />
-                      <button
-                        className="ghost-btn"
-                        style={{ padding: '8px 14px' }}
-                        onClick={async () => {
-                          const f = await pickFile(keyPath || undefined);
-                          if (f) setKeyPath(f);
-                        }}
-                      >
+                      {recentKeys.length > 0 && (
+                        <button
+                          className="ghost-btn"
+                          style={{ padding: '8px 12px' }}
+                          title={t('dlg.savedKeys')}
+                          onClick={() => setShowKeys((v) => !v)}
+                        >
+                          ★ ▾
+                        </button>
+                      )}
+                      <button className="ghost-btn" style={{ padding: '8px 14px' }} onClick={chooseKey}>
                         {t('common.choose')}
                       </button>
+                      {showKeys && recentKeys.length > 0 && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '100%',
+                            left: 0,
+                            right: 0,
+                            marginTop: 4,
+                            maxHeight: 200,
+                            overflow: 'auto',
+                            background: 'var(--surface-3)',
+                            border: '1px solid var(--border-3)',
+                            borderRadius: 8,
+                            boxShadow: '0 12px 32px rgba(0,0,0,0.5)',
+                            zIndex: 10,
+                            padding: 4,
+                          }}
+                        >
+                          {recentKeys.map((k) => (
+                            <div key={k} className="menu-item" style={{ gap: 6 }}>
+                              <span
+                                style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}
+                                onClick={() => {
+                                  setKeyPath(k);
+                                  rememberKey(k);
+                                  setShowKeys(false);
+                                }}
+                              >
+                                <div style={{ font: '600 11.5px var(--font-mono)', color: 'var(--text)' }}>
+                                  {baseName(k)}
+                                </div>
+                                <div
+                                  style={{
+                                    font: '400 9.5px var(--font-mono)',
+                                    color: 'var(--text-muted)',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    direction: 'rtl',
+                                    textAlign: 'left',
+                                  }}
+                                >
+                                  {k}
+                                </div>
+                              </span>
+                              <span
+                                className="icon-btn"
+                                title={t('dlg.forgetKey')}
+                                onClick={() => forgetKey(k)}
+                                style={{ width: 20, height: 20, fontSize: 11, flex: 'none' }}
+                              >
+                                ✕
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <input
                       className="field mono"

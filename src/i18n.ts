@@ -27,6 +27,13 @@ const T = {
   'toolbar.layout': { vi: 'BỐ CỤC', en: 'LAYOUT' },
   'toolbar.autoSaved': { vi: 'Phiên được lưu tự động', en: 'Session auto-saved' },
   'toolbar.settings': { vi: 'Cài đặt', en: 'Settings' },
+  'toolbar.usageTitle': { vi: 'Mức dùng Claude Code (như /usage)', en: 'Claude Code usage (same as /usage)' },
+  'toolbar.usageSession': { vi: 'Phiên 5 giờ', en: '5-hour session' },
+  'toolbar.usageWeek': { vi: 'Tuần', en: 'Week' },
+  'toolbar.usageResetAt': { vi: 'reset lúc {t}', en: 'resets at {t}' },
+  'toolbar.cursorTitle': { vi: 'Mức dùng Cursor (theo tháng)', en: 'Cursor usage (monthly)' },
+  'toolbar.cursorReqs': { vi: '{n}/{m} yêu cầu nhanh', en: '{n}/{m} fast requests' },
+  'toolbar.usageSwap': { vi: 'Bấm để đổi Claude ↔ Cursor', en: 'Click to switch Claude ↔ Cursor' },
 
   // ----- status bar -----
   'status.tab': { vi: 'tab: {name}', en: 'tab: {name}' },
@@ -178,6 +185,14 @@ const T = {
   'dlg.shellNotFound': { vi: '{label} — không tìm thấy trên máy', en: '{label} — not found on this machine' },
   'dlg.fromSshConfig': { vi: 'Từ ~/.ssh/config', en: 'From ~/.ssh/config' },
   'dlg.sshConfigEmpty': { vi: 'Không tìm thấy host trong ~/.ssh/config', en: 'No hosts found in ~/.ssh/config' },
+  'dlg.fromTlp': { vi: 'Nhập .tlp', en: 'Import .tlp' },
+  'dlg.fromTlpHint': {
+    vi: 'Nhập host/port/user từ profile Bitvise (.tlp). Mật khẩu bị mã hóa nên phải nhập tay.',
+    en: 'Import host/port/user from a Bitvise profile (.tlp). The password is encrypted, so enter it manually.',
+  },
+  'dlg.tlpError': { vi: 'Không đọc được .tlp: {e}', en: 'Could not read .tlp: {e}' },
+  'dlg.savedKeys': { vi: 'Key đã lưu', en: 'Saved keys' },
+  'dlg.forgetKey': { vi: 'Xóa khỏi danh sách', en: 'Remove from list' },
   'dlg.host': { vi: 'MÁY CHỦ (IP / HOSTNAME)', en: 'HOST (IP / HOSTNAME)' },
   'dlg.port': { vi: 'CỔNG', en: 'PORT' },
   'dlg.username': { vi: 'TÊN ĐĂNG NHẬP', en: 'USERNAME' },

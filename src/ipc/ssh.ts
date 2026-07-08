@@ -87,6 +87,19 @@ export async function secretSet(paneId: string, value: string): Promise<void> {
   await invoke('secret_set', { paneId, value });
 }
 
+/** SSH fields recovered from a Bitvise `.tlp` profile (password not included). */
+export interface TlpProfile {
+  found: boolean;
+  host: string;
+  port: number;
+  user: string;
+}
+
+/** Parse a Bitvise Tunnelier `.tlp` profile into host/port/user. */
+export async function parseTlp(path: string): Promise<TlpProfile> {
+  return await invoke<TlpProfile>('parse_tlp', { path });
+}
+
 /** Copy a pane's saved secret to another pane (SSH terminal → its SFTP browser). */
 export async function secretCopy(fromPaneId: string, toPaneId: string): Promise<void> {
   if (!IS_TAURI) return;

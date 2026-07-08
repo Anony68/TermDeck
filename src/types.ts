@@ -109,6 +109,8 @@ export interface PersistedState {
   activeTabId: string;
   settings: Settings;
   snapshots: Snapshot[];
+  /** Private-key files (.pem/…) the user has picked before, newest first. */
+  recentKeys?: string[];
 }
 
 /** Shape returned by the Rust `detect_shells` command. */

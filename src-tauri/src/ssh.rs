@@ -1028,3 +1028,100 @@ pub fn ssh_config_hosts() -> Vec<SshConfigHost> {
     flush(&mut out, &aliases, &host_name, &user, port, &identity);
     out
 }
+
+// ---------- Bitvise .tlp profile import ----------
+
+/// Connection fields recovered from a Bitvise Tunnelier `.tlp` profile. The
+/// password is stored machine-encrypted by Bitvise and cannot be recovered, so
+/// the user still fills that in after import.
+#[derive(Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TlpProfile {
+    pub found: bool,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+}
+
+/// Chars allowed in a hostname / IPv4 literal.
+fn is_host_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'.' || b == b'-' || b == b'_'
+}
+
+fn read_u32_be(buf: &[u8], at: usize) -> Option<u32> {
+    let s = buf.get(at..at + 4)?;
+    Some(u32::from_be_bytes([s[0], s[1], s[2], s[3]]))
+}
+
+/// Read a 4-byte-BE-length-prefixed string at `at`, returning (string, end).
+/// `ok` gates the byte charset; the whole run must satisfy it.
+fn read_prefixed_str(buf: &[u8], at: usize, max: u32, ok: fn(u8) -> bool) -> Option<(String, usize)> {
+    let len = read_u32_be(buf, at)?;
+    if len == 0 || len > max {
+        return None;
+    }
+    let start = at + 4;
+    let end = start + len as usize;
+    let slice = buf.get(start..end)?;
+    if !slice.iter().all(|&b| ok(b)) {
+        return None;
+    }
+    Some((String::from_utf8_lossy(slice).into_owned(), end))
+}
+
+/// The `.tlp` binary is an internal Bitvise format (undocumented). Rather than
+/// track its evolving layout, we scan for the first `<u32 len><host><u32 port>`
+/// run where host looks like a hostname/IP and port is valid, then take the
+/// next short printable string as the username. Best-effort → `found: false`.
+fn parse_tlp_bytes(buf: &[u8]) -> TlpProfile {
+    let none = TlpProfile::default();
+    // Skip the leading version string ("Tunnelier X.YZ") if present.
+    let mut scan = match read_prefixed_str(buf, 0, 64, |b| b.is_ascii_graphic() || b == b' ') {
+        Some((_, end)) => end,
+        None => 0,
+    };
+    while scan + 4 < buf.len() {
+        let Some((host, after_host)) = read_prefixed_str(buf, scan, 253, is_host_byte) else {
+            scan += 1;
+            continue;
+        };
+        // A real host contains a dot (IPv4 or FQDN) and at least one alnum.
+        let plausible = host.contains('.') && host.chars().any(|c| c.is_ascii_alphanumeric());
+        let port = read_u32_be(buf, after_host).unwrap_or(0);
+        if !plausible || port == 0 || port > 65535 {
+            scan += 1;
+            continue;
+        }
+        // Username = next short printable string within a small window.
+        let mut user = String::new();
+        let mut p = after_host + 4;
+        let limit = (p + 64).min(buf.len());
+        while p + 4 < limit {
+            if let Some((s, _)) = read_prefixed_str(buf, p, 64, |b| {
+                b.is_ascii_graphic() && b != b',' && b != b':'
+            }) {
+                user = s;
+                break;
+            }
+            p += 1;
+        }
+        return TlpProfile {
+            found: true,
+            host,
+            port: port as u16,
+            user,
+        };
+    }
+    none
+}
+
+/// Parse a Bitvise `.tlp` profile file into SSH connection fields.
+#[tauri::command(rename_all = "camelCase")]
+pub fn parse_tlp(path: String) -> Result<TlpProfile, String> {
+    let buf = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let prof = parse_tlp_bytes(&buf);
+    if !prof.found {
+        return Err("no SSH host found in profile".into());
+    }
+    Ok(prof)
+}

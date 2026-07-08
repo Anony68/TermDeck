@@ -202,6 +202,104 @@ pub fn claude_sessions(cwd: String) -> Vec<SessionInfo> {
     out
 }
 
+// ---------- plan usage (the data behind the CLI's /usage screen) ----------
+
+/// One rate-limit window: percent used (0–100) + ISO reset timestamp.
+#[derive(Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageWindow {
+    pub utilization: f64,
+    pub resets_at: String,
+}
+
+#[derive(Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageInfo {
+    pub found: bool,
+    pub five_hour: UsageWindow,
+    pub seven_day: UsageWindow,
+}
+
+fn token_from_json(s: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(s.trim()).ok()?;
+    v.get("claudeAiOauth")?
+        .get("accessToken")?
+        .as_str()
+        .map(|t| t.to_string())
+}
+
+/// Claude Code's OAuth access token: macOS keeps it in the login keychain,
+/// other platforms in `~/.claude/.credentials.json`.
+fn oauth_token() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(out) = std::process::Command::new("security")
+            .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+            .output()
+        {
+            if out.status.success() {
+                if let Some(tok) = token_from_json(&String::from_utf8_lossy(&out.stdout)) {
+                    return Some(tok);
+                }
+            }
+        }
+    }
+    let path = claude_home()?.join(".credentials.json");
+    token_from_json(&std::fs::read_to_string(path).ok()?)
+}
+
+fn fetch_usage() -> UsageInfo {
+    let none = UsageInfo::default();
+    let Some(token) = oauth_token() else {
+        return none;
+    };
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(10)))
+        .build()
+        .into();
+    let Ok(resp) = agent
+        .get("https://api.anthropic.com/api/oauth/usage")
+        .header("Authorization", &format!("Bearer {token}"))
+        .header("anthropic-beta", "oauth-2025-04-20")
+        .call()
+    else {
+        return none;
+    };
+    let Ok(txt) = resp.into_body().read_to_string() else {
+        return none;
+    };
+    let Ok(v) = serde_json::from_str::<Value>(&txt) else {
+        return none;
+    };
+    let win = |k: &str| {
+        let o = v.get(k);
+        UsageWindow {
+            utilization: o
+                .and_then(|o| o.get("utilization"))
+                .and_then(|x| x.as_f64())
+                .unwrap_or(0.0),
+            resets_at: o
+                .and_then(|o| o.get("resets_at"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+        }
+    };
+    UsageInfo {
+        found: v.get("five_hour").is_some(),
+        five_hour: win("five_hour"),
+        seven_day: win("seven_day"),
+    }
+}
+
+/// Fetch plan usage off the main thread (network + keychain access).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn claude_usage() -> UsageInfo {
+    tauri::async_runtime::spawn_blocking(fetch_usage)
+        .await
+        .unwrap_or_default()
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub fn claude_session(cwd: String) -> SessionState {
     let mut st = SessionState::default();

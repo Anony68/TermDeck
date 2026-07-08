@@ -87,6 +87,8 @@ interface AppState {
   activeTabId: string;
   settings: Settings;
   snapshots: Snapshot[];
+  /** Private-key files picked before, newest first (for the key auth dropdown). */
+  recentKeys: string[];
 
   runtime: Record<string, RuntimeInfo>;
   /** Live CPU%/memory per pane (from the Rust sampler; not persisted). */
@@ -160,6 +162,11 @@ interface AppState {
 
   captureSnapshot: () => void;
   restoreSnapshot: (at: number) => void;
+
+  /** Remember a private-key file path (moves it to the front). */
+  rememberKey: (path: string) => void;
+  /** Drop a key path from the remembered list. */
+  forgetKey: (path: string) => void;
 
   exportData: () => string;
   importData: (json: string) => boolean;
@@ -241,6 +248,7 @@ function scheduleSave(get: () => AppState) {
       activeTabId: s.activeTabId,
       settings: s.settings,
       snapshots: s.snapshots,
+      recentKeys: s.recentKeys,
     };
     void savePersisted(persisted).then(() => useStore.setState({ savedAt: Date.now() }));
   }, 400);
@@ -278,6 +286,7 @@ export const useStore = create<AppState>((set, get) => {
     activeTabId: '',
     settings: DEFAULT_SETTINGS,
     snapshots: [],
+    recentKeys: [],
     runtime: {},
     stats: {},
     claudeSessions: {},
@@ -293,6 +302,7 @@ export const useStore = create<AppState>((set, get) => {
       const settings: Settings = { ...DEFAULT_SETTINGS, ...(p?.settings ?? {}) };
       const snapshots = p?.snapshots ?? [];
       const projects = p?.projects ?? [];
+      const recentKeys = p?.recentKeys ?? [];
 
       if (!p || p.version !== STORE_VERSION || !settings.restoreOnStartup) {
         const t = freshTab(settings.defaultLayout, 'Tab 1');
@@ -303,6 +313,7 @@ export const useStore = create<AppState>((set, get) => {
           activeTabId: t.id,
           settings,
           snapshots,
+          recentKeys,
           runtime: {},
           hydrated: true,
         });
@@ -332,6 +343,7 @@ export const useStore = create<AppState>((set, get) => {
         activeTabId,
         settings,
         snapshots,
+        recentKeys,
         runtime: buildRuntime(panes, settings.autoRunCommand),
         hydrated: true,
       });
@@ -787,6 +799,15 @@ export const useStore = create<AppState>((set, get) => {
       });
     },
 
+    rememberKey: (path) => {
+      const p = path.trim();
+      if (!p) return;
+      const next = [p, ...get().recentKeys.filter((k) => k !== p)].slice(0, 20);
+      commit({ recentKeys: next });
+    },
+
+    forgetKey: (path) => commit({ recentKeys: get().recentKeys.filter((k) => k !== path) }),
+
     exportData: () => {
       const s = get();
       const { tabs, panes } = withoutEphemeral(s.tabs, s.panes);
@@ -799,6 +820,7 @@ export const useStore = create<AppState>((set, get) => {
           activeTabId: s.activeTabId,
           settings: s.settings,
           snapshots: s.snapshots,
+          recentKeys: s.recentKeys,
         },
         null,
         2
@@ -825,6 +847,7 @@ export const useStore = create<AppState>((set, get) => {
           activeTabId,
           settings,
           snapshots: Array.isArray(p.snapshots) ? p.snapshots : [],
+          recentKeys: Array.isArray(p.recentKeys) ? p.recentKeys : get().recentKeys,
           runtime: buildRuntime(panes, settings.autoRunCommand),
           focusedPaneId: null,
         });

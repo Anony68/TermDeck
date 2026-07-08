@@ -1,4 +1,5 @@
 mod claude;
+mod cursor;
 mod pty;
 mod shells;
 mod ssh;
@@ -180,6 +181,8 @@ pub fn run() {
             download_and_run,
             claude::claude_session,
             claude::claude_sessions,
+            claude::claude_usage,
+            cursor::cursor_usage,
             ssh::spawn_ssh,
             ssh::write_ssh,
             ssh::resize_ssh,
@@ -187,6 +190,7 @@ pub fn run() {
             ssh::secret_set,
             ssh::secret_copy,
             ssh::secret_delete,
+            ssh::parse_tlp,
             ssh::sftp_connect,
             ssh::sftp_disconnect,
             ssh::sftp_home,

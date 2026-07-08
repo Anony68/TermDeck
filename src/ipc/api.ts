@@ -24,10 +24,13 @@ export async function pickFolder(defaultPath?: string): Promise<string | null> {
 }
 
 /** Native file picker (e.g. for choosing an SSH private key). */
-export async function pickFile(defaultPath?: string): Promise<string | null> {
+export async function pickFile(
+  defaultPath?: string,
+  filters?: Array<{ name: string; extensions: string[] }>
+): Promise<string | null> {
   if (!IS_TAURI) return null;
   const { open } = await import('@tauri-apps/plugin-dialog');
-  const res = await open({ directory: false, multiple: false, defaultPath });
+  const res = await open({ directory: false, multiple: false, defaultPath, filters });
   return typeof res === 'string' ? res : null;
 }
 
