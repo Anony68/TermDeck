@@ -185,6 +185,7 @@ pub fn run() {
             ssh::resize_ssh,
             ssh::kill_ssh,
             ssh::secret_set,
+            ssh::secret_copy,
             ssh::secret_delete,
             ssh::sftp_connect,
             ssh::sftp_disconnect,

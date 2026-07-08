@@ -17,7 +17,7 @@ import type {
 import { LAYOUTS, fitLayout } from '../layouts';
 import { loadPersisted, savePersisted } from '../ipc/persist';
 import { killSession } from '../ipc/session';
-import { secretDelete } from '../ipc/ssh';
+import { secretCopy, secretDelete } from '../ipc/ssh';
 import { isPaneActive } from './activity';
 import { IS_WIN, SHELL_ORDER } from '../shells';
 import { translate } from '../i18n';
@@ -126,6 +126,9 @@ interface AppState {
   addPane: (input: NewPaneInput) => string;
   /** Open a one-shot temp terminal (default shell, home dir) — see Pane.ephemeral. */
   addTempPane: () => void;
+  /** Open an SFTP file browser for an SSH pane, reusing its config + secret.
+   *  Focuses the existing browser pane for the same host/user if one exists. */
+  openSftpForPane: (paneId: string) => void;
   /** Show an existing cmd in the active tab (restarts it if stopped). */
   showPaneInTab: (paneId: string, slot?: number) => void;
   /** Hide a cmd from the active tab (process keeps running). */
@@ -474,6 +477,43 @@ export const useStore = create<AppState>((set, get) => {
         autoStart: false,
         ephemeral: true,
       });
+    },
+
+    openSftpForPane: (paneId) => {
+      const { panes, settings } = get();
+      const src = panes.find((p) => p.id === paneId);
+      if (!src?.ssh) return;
+      const { host, port, user } = src.ssh;
+      // Reuse an existing browser pane for the same remote instead of duplicating.
+      const existing = panes.find(
+        (p) =>
+          p.kind === 'browser' &&
+          p.ssh &&
+          p.ssh.host === host &&
+          p.ssh.port === port &&
+          p.ssh.user === user
+      );
+      if (existing) {
+        get().showPaneInTab(existing.id);
+        return;
+      }
+      const id = uid();
+      // Secrets live in the OS keyring per pane id — copy the SSH pane's
+      // password/passphrase so the browser can authenticate on its own.
+      void secretCopy(paneId, id)
+        .catch(() => {})
+        .then(() => {
+          get().addPane({
+            id,
+            name: `${translate(settings.language, 'sftp.name')} · ${src.name}`,
+            shell: src.shell,
+            cwd: '',
+            autoStart: true,
+            projectId: src.projectId,
+            kind: 'browser',
+            ssh: { ...src.ssh! },
+          });
+        });
     },
 
     showPaneInTab: (paneId, slot) => {

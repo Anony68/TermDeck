@@ -32,6 +32,7 @@ export function Sidebar() {
   const openEditCmd = useStore((s) => s.openEditCmd);
   const openAddCmd = useStore((s) => s.openAddCmd);
   const addTempPane = useStore((s) => s.addTempPane);
+  const openSftpForPane = useStore((s) => s.openSftpForPane);
   const openSettings = useStore((s) => s.openSettings);
   const t = useT();
 
@@ -219,10 +220,10 @@ export function Sidebar() {
           {t('sidebar.newTerminal')}
         </button>
         <button
-          className="link-btn"
+          className="outline-accent-btn"
           title={t('sidebar.tempTerminalTitle')}
           onClick={addTempPane}
-          style={{ padding: '0 10px', flex: 'none' }}
+          style={{ flex: 'none', padding: '6px 10px', justifyContent: 'center' }}
         >
           {t('sidebar.tempTerminal')}
         </button>
@@ -387,6 +388,9 @@ export function Sidebar() {
           onClose={() => setMenu(null)}
           items={[
             { label: t('pane.editTerminal'), onClick: () => openEditCmd(menu.paneId) },
+            ...((menuPane.kind ?? 'shell') === 'ssh'
+              ? [{ label: t('pane.openSftp'), onClick: () => openSftpForPane(menu.paneId) }]
+              : []),
             {
               label: menuPane.pinned ? t('pane.unpin') : t('pane.pin'),
               onClick: () => togglePinPane(menu.paneId),

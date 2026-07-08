@@ -103,6 +103,11 @@ const T = {
   'pane.exitedMsg': { vi: 'Tiến trình đã kết thúc (exit {code})', en: 'Process exited (code {code})' },
   'pane.notStarted': { vi: 'Tiến trình chưa chạy', en: 'Process is not running' },
   'pane.reopenPath': { vi: '⟳ Mở lại đúng path', en: '⟳ Reopen at same path' },
+  'pane.openSftp': {
+    vi: 'Mở SFTP — duyệt file trên server này',
+    en: 'Open SFTP — browse files on this server',
+  },
+  'sftp.name': { vi: 'SFTP', en: 'SFTP' },
   'pane.uptime': { vi: 'Thời gian chạy', en: 'Uptime' },
   'pane.claudeBusyShort': { vi: 'đang xử lý…', en: 'working…' },
   'pane.claudeIdleShort': { vi: 'sẵn sàng', en: 'ready' },

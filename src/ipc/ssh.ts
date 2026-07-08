@@ -87,6 +87,12 @@ export async function secretSet(paneId: string, value: string): Promise<void> {
   await invoke('secret_set', { paneId, value });
 }
 
+/** Copy a pane's saved secret to another pane (SSH terminal → its SFTP browser). */
+export async function secretCopy(fromPaneId: string, toPaneId: string): Promise<void> {
+  if (!IS_TAURI) return;
+  await invoke('secret_copy', { fromPaneId, toPaneId });
+}
+
 export function secretDelete(paneId: string): void {
   if (!IS_TAURI) return;
   void invoke('secret_delete', { paneId });

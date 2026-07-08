@@ -132,6 +132,18 @@ pub fn secret_set(pane_id: String, value: String) -> Result<(), String> {
     entry.set_password(&value).map_err(|e| e.to_string())
 }
 
+/// Copy a pane's saved password/passphrase to another pane, so an SFTP browser
+/// opened from an SSH terminal can authenticate without re-asking the user.
+#[tauri::command(rename_all = "camelCase")]
+pub fn secret_copy(from_pane_id: String, to_pane_id: String) -> Result<(), String> {
+    if let Some(v) = get_secret(&from_pane_id) {
+        keyring_entry(&to_pane_id)?
+            .set_password(&v)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub fn secret_delete(pane_id: String) -> Result<(), String> {
     if let Ok(entry) = keyring_entry(&pane_id) {

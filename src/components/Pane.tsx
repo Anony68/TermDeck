@@ -38,6 +38,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
   const renamePane = useStore((s) => s.renamePane);
   const openEditCmd = useStore((s) => s.openEditCmd);
   const togglePinPane = useStore((s) => s.togglePinPane);
+  const openSftpForPane = useStore((s) => s.openSftpForPane);
   const stat = useStore((s) => s.stats[pane.id]);
   const claudeSession = useStore((s) => s.claudeSessions[pane.id]);
   const sshStatus = useStore((s) => s.sshStatus[pane.id]);
@@ -265,6 +266,18 @@ export function Pane({ pane }: { pane: PaneModel }) {
             <ClaudeIcon size={13} color={claudeRunning ? undefined : 'var(--text-muted)'} />
           </span>
         )}
+        {kind === 'ssh' && (
+          <span
+            className="pane-ctl"
+            title={t('pane.openSftp')}
+            onClick={(e) => {
+              e.stopPropagation();
+              openSftpForPane(pane.id);
+            }}
+          >
+            📁
+          </span>
+        )}
         <span
           className="pane-ctl"
           title={isBrowser ? t('pane.reconnect') : t('pane.restart')}
@@ -402,6 +415,9 @@ export function Pane({ pane }: { pane: PaneModel }) {
           onClose={() => setMenu(null)}
           items={[
             { label: t('pane.editTerminal'), onClick: () => openEditCmd(pane.id) },
+            ...(kind === 'ssh'
+              ? [{ label: t('pane.openSftp'), onClick: () => openSftpForPane(pane.id) }]
+              : []),
             {
               label: pane.pinned ? t('pane.unpin') : t('pane.pin'),
               onClick: () => togglePinPane(pane.id),
