@@ -21,6 +21,7 @@ import {
   onSftpProgress,
 } from '../ipc/ssh';
 import { FilePanel, type FsBackend } from './FilePanel';
+import { IconSwap, IconPlay, IconPause, IconClose, IconCheck } from './icons';
 import {
   runTransfer,
   type ConflictAction,
@@ -467,6 +468,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
             initialPath={initialLocal}
             accent="var(--sh-ps)"
             transferLabel={hasRemote ? t('fb.upload') : t('fb.copyRight')}
+            transferDir="right"
             refreshKey={leftKey}
             onPathChange={setLocalCwd}
             onTransfer={(entries, from) =>
@@ -486,6 +488,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
               initialPath={remoteStart ?? pane.browserRemotePath ?? pane.ssh?.remotePath ?? '/'}
               accent="var(--accent)"
               transferLabel={t('fb.download')}
+              transferDir="left"
               refreshKey={rightKey}
               onPathChange={setRemoteCwd}
               onTransfer={(entries, from) => onDownload(entries, from)}
@@ -528,6 +531,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
               initialPath={pane.browserRemotePath ?? initialLocal}
               accent="var(--sh-ps)"
               transferLabel={t('fb.copyLeft')}
+              transferDir="left"
               refreshKey={rightKey}
               onPathChange={setRemoteCwd}
               onTransfer={() => alert(t('fb.noRemote'))}
@@ -552,14 +556,23 @@ export function FileBrowser({ pane }: { pane: Pane }) {
         }}
       >
         {hasRemote && conn === 'ready' && !busy && !planning && (
-          <button className="fb-sync-btn" style={{ flex: 'none' }} onClick={onBiSyncClick}>
+          <button
+            className="fb-sync-btn"
+            style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+            onClick={onBiSyncClick}
+          >
+            <IconSwap size={13} />
             {t('sync.biBtn')}
           </button>
         )}
         {busy ? (
           <>
-            <span style={{ color: paused ? 'var(--warn)' : 'var(--accent)', whiteSpace: 'nowrap' }}>
-              {paused ? `⏸ ${t('fb.paused')} · ` : ''}
+            <span style={{ color: paused ? 'var(--warn)' : 'var(--accent)', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              {paused && (
+                <>
+                  <IconPause size={11} /> {t('fb.paused')} ·
+                </>
+              )}
               {batch?.verb ?? t('fb.transferring')} {batch ? `${batch.done}/${batch.total}` : ''}
               {progress ? ` · ${progress.name}` : '…'}
             </span>
@@ -591,34 +604,38 @@ export function FileBrowser({ pane }: { pane: Pane }) {
             )}
             <button
               className="fb-cancel"
-              style={{ marginLeft: 'auto', borderColor: 'var(--warn)', color: 'var(--warn)' }}
+              style={{ marginLeft: 'auto', borderColor: 'var(--warn)', color: 'var(--warn)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
               onClick={() => {
                 pausedRef.current = !pausedRef.current;
                 setPaused(pausedRef.current);
               }}
             >
+              {paused ? <IconPlay size={12} /> : <IconPause size={12} />}
               {paused ? t('fb.resumeBtn') : t('fb.pauseBtn')}
             </button>
             <button
               className="fb-cancel"
               title={t('fb.cancelTip')}
               onClick={() => (cancelRef.current = true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
             >
+              <IconClose size={12} />
               {t('fb.cancelBtn')}
             </button>
           </>
         ) : planning ? (
           <span style={{ color: 'var(--accent)' }}>{t('fb.analyzing')}</span>
         ) : biSummary ? (
-          <span style={{ color: biSummary.cancelled ? 'var(--warn)' : 'var(--accent)' }}>
-            {biSummary.cancelled ? t('fb.syncCancelled') : ''}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: biSummary.cancelled ? 'var(--warn)' : 'var(--accent)' }}>
+            {biSummary.cancelled ? t('fb.syncCancelled') : <IconCheck size={12} />}
             {t('sync.biDone', { up: biSummary.uploaded, down: biSummary.downloaded })}
             {biSummary.unchanged > 0 && ` · ${t('fb.syncKept', { n: biSummary.unchanged })}`}
             {biSummary.failed > 0 && ` · ${t('fb.errN', { n: biSummary.failed })}`}
           </span>
         ) : syncSummary ? (
-          <span style={{ color: syncSummary.cancelled ? 'var(--warn)' : 'var(--accent)' }}>
-            {syncSummary.cancelled ? t('fb.syncCancelled') : t('fb.syncDone')}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: syncSummary.cancelled ? 'var(--warn)' : 'var(--accent)' }}>
+            {syncSummary.cancelled ? t('fb.syncCancelled') : <IconCheck size={12} />}
+            {syncSummary.cancelled ? '' : t('fb.syncDone')}
             {syncSummary.dir === 'up' ? t('fb.syncUploaded') : t('fb.syncDownloaded')} {syncSummary.uploaded}
             {syncSummary.deleted > 0 &&
               ` · ${t('fb.syncDeleted', { n: syncSummary.deleted, side: syncSummary.dir === 'up' ? t('fb.sideRemote') : t('fb.sideLocal') })}`}
@@ -626,8 +643,8 @@ export function FileBrowser({ pane }: { pane: Pane }) {
             {syncSummary.failed > 0 && ` · ${t('fb.errN', { n: syncSummary.failed })}`}
           </span>
         ) : summary ? (
-          <span style={{ color: summary.cancelled ? 'var(--warn)' : 'var(--accent)' }}>
-            {summary.cancelled ? t('fb.cancelled') : '✓ '}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: summary.cancelled ? 'var(--warn)' : 'var(--accent)' }}>
+            {summary.cancelled ? t('fb.cancelled') : <IconCheck size={12} />}
             {t('fb.transferredN', { verb: summary.verb, n: summary.transferred })}
             {summary.skipped > 0 && ` · ${t('fb.skippedN', { n: summary.skipped })}`}
             {summary.failed > 0 && ` · ${t('fb.errN', { n: summary.failed })}`}
@@ -894,7 +911,9 @@ function ConflictDialog({
           </div>
           <button
             className="ghost-btn"
-            style={{ ...CONFLICT_BTN, color: 'var(--danger)' }}
+            // Standalone in a column: flex:1 would stretch its HEIGHT (main axis),
+            // making it taller than the paired rows — pin the width instead.
+            style={{ ...CONFLICT_BTN, flex: 'none', width: '100%', color: 'var(--danger)' }}
             onClick={() => onChoose('cancel')}
           >
             {t('conflict.cancelAll')}

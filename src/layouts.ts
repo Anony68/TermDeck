@@ -1,4 +1,4 @@
-import type { LayoutPreset } from './types';
+import type { LayoutPreset, LayoutMode } from './types';
 
 export interface LayoutDef {
   id: LayoutPreset;
@@ -55,6 +55,23 @@ export function fitLayout(count: number, current: LayoutPreset): LayoutPreset {
     }
   }
   return best;
+}
+
+/** The nicest-fitting preset for exactly `count` panes (auto mode: grows AND shrinks). */
+export function autoLayout(count: number): LayoutPreset {
+  const n = Math.max(1, count);
+  if (n <= 1) return 'single';
+  if (n === 2) return 'cols2';
+  if (n === 3) return 'big1plus2';
+  if (n === 4) return 'grid2x2';
+  return 'grid3x2'; // 5–6 (and any overflow, capped at 6 slots)
+}
+
+/** Resolve a tab's stored layout to a concrete preset for the current pane count.
+ *  'auto' re-fits every render (so removing a pane shrinks the grid); a fixed
+ *  preset only grows to fit (never shrinks). */
+export function resolveLayout(layout: LayoutMode, count: number): LayoutPreset {
+  return layout === 'auto' ? autoLayout(count) : fitLayout(count, layout);
 }
 
 /** Rectangles (viewBox 22×16) used to draw each preset's picker icon. */

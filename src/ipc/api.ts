@@ -15,6 +15,17 @@ export async function detectShells(): Promise<ShellInfo[]> {
   return invoke<ShellInfo[]>('detect_shells');
 }
 
+/** Kill leftover TermDeck-spawned shell processes not attached to any pane.
+ *  Returns how many were reaped. */
+export async function cleanupOrphans(): Promise<number> {
+  if (!IS_TAURI) return 0;
+  try {
+    return await invoke<number>('cleanup_orphans');
+  } catch {
+    return 0;
+  }
+}
+
 /** Native folder picker for the "Chọn…" button. */
 export async function pickFolder(defaultPath?: string): Promise<string | null> {
   if (!IS_TAURI) return null;

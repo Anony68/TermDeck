@@ -5,13 +5,17 @@ import { IS_TAURI } from './env';
 
 export interface CursorUsage {
   found: boolean;
-  usedRequests: number;
-  /** 0 = no fixed request quota (usage-based plan). */
-  maxRequests: number;
-  /** Percent of the monthly quota used (0 when quota unknown). */
+  /** Membership tier (e.g. "ultra", "pro", "free"); "" if unknown. */
+  plan: string;
+  /** Percent of the included allowance used this cycle (0–100). */
   utilization: number;
-  /** ISO start of the billing month; resets one month later. */
-  startOfMonth: string;
+  /** Raw used / limit of the included allowance (0 when not applicable). */
+  used: number;
+  limit: number;
+  /** ISO end of the current billing cycle (allowance reset). */
+  resetsAt: string;
+  /** Plans with no fixed cap. */
+  unlimited: boolean;
 }
 
 export async function cursorUsage(): Promise<CursorUsage | null> {

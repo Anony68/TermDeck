@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { claudeSessions, type ClaudeSessionInfo } from '../ipc/claude';
+import { IconClose, IconPlay } from './icons';
 import { useT } from '../i18n';
 
 function ago(unixSec: number): string {
@@ -58,8 +59,8 @@ export function ClaudeSessionsDialog({
           <span style={{ font: '600 14px var(--font-ui)', color: 'var(--text)', flex: 1 }}>
             {t('claude.sessionsTitle')}
           </span>
-          <span className="icon-btn" onClick={onClose} style={{ width: 24, height: 24, fontSize: 13 }}>
-            ✕
+          <span className="icon-btn" onClick={onClose} style={{ width: 24, height: 24 }}>
+            <IconClose size={15} />
           </span>
         </div>
         <div
@@ -107,7 +108,9 @@ export function ClaudeSessionsDialog({
                   {s.sessionId.slice(0, 8)} · {t('claude.sessionTurns', { n: s.turns })} · {ago(s.mtime)}
                 </div>
               </div>
-              <span style={{ color: '#d97757', fontSize: 12, marginTop: 2 }}>▶</span>
+              <span style={{ display: 'inline-flex', color: '#d97757', marginTop: 2 }}>
+                <IconPlay size={13} />
+              </span>
             </div>
           ))}
         </div>

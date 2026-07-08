@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type {
   LayoutPreset,
+  LayoutMode,
   Pane,
   PaneKind,
   PaneStatus,
@@ -14,7 +15,7 @@ import type {
   Tab,
   TabItem,
 } from '../types';
-import { LAYOUTS, fitLayout } from '../layouts';
+import { LAYOUTS, resolveLayout } from '../layouts';
 import { loadPersisted, savePersisted } from '../ipc/persist';
 import { killSession } from '../ipc/session';
 import { secretCopy, secretDelete } from '../ipc/ssh';
@@ -120,7 +121,7 @@ interface AppState {
   closeTab: (id: string) => void;
   renameTab: (id: string, name: string) => void;
   setActiveTab: (id: string) => void;
-  setLayout: (preset: LayoutPreset) => void;
+  setLayout: (preset: LayoutMode) => void;
   reorderTab: (dragId: string, targetId: string) => void;
   togglePinTab: (id: string) => void;
 
@@ -141,6 +142,8 @@ interface AppState {
   stopPane: (paneId: string) => void;
   /** Stop every running terminal's process; the cmds stay in the list. */
   stopAllPanes: () => void;
+  /** Stop every running (non-browser) terminal matching `pred`. */
+  stopPanesWhere: (pred: (p: Pane) => boolean) => void;
   /** Delete a cmd everywhere and kill its process (Xóa). */
   removePane: (paneId: string) => void;
   renamePane: (paneId: string, name: string) => void;
@@ -179,7 +182,7 @@ interface AppState {
   closeSettings: () => void;
 }
 
-function freshTab(layout: LayoutPreset, name = 'Tab mới'): Tab {
+function freshTab(layout: LayoutMode, name = 'Tab mới'): Tab {
   return { id: uid(), name, layout, pinned: false, items: [] };
 }
 
@@ -266,14 +269,15 @@ export const useStore = create<AppState>((set, get) => {
     const tab = tabs.find((t) => t.id === activeTabId);
     if (!tab || tab.items.some((i) => i.paneId === paneId)) return;
     const shown = displayItems(tab, panes);
-    const layout = fitLayout(shown.length + 1, tab.layout);
+    const eff = resolveLayout(tab.layout, shown.length + 1); // concrete preset for slots
+    const nextLayout = tab.layout === 'auto' ? 'auto' : eff; // keep auto sticky
     let s = slot ?? -1;
     const used = new Set(shown.map((i) => i.slot));
-    if (s < 0 || s >= LAYOUTS[layout].capacity || used.has(s)) s = firstEmptySlot(shown, layout);
+    if (s < 0 || s >= LAYOUTS[eff].capacity || used.has(s)) s = firstEmptySlot(shown, eff);
     if (s < 0) s = shown.length;
     commit({
       tabs: tabs.map((t) =>
-        t.id === activeTabId ? { ...t, layout, items: [...t.items, { paneId, slot: s }] } : t
+        t.id === activeTabId ? { ...t, layout: nextLayout, items: [...t.items, { paneId, slot: s }] } : t
       ),
       focusedPaneId: paneId,
     });
@@ -396,7 +400,8 @@ export const useStore = create<AppState>((set, get) => {
     // keep running in the sidebar) and compact the rest into the available slots.
     setLayout: (preset) => {
       const { tabs, activeTabId, panes } = get();
-      const cap = LAYOUTS[preset].capacity;
+      // 'auto' fits up to the largest preset (6 slots); it never trims panes.
+      const cap = preset === 'auto' ? 6 : LAYOUTS[preset].capacity;
       const paneIds = new Set(panes.map((p) => p.id));
       const newTabs = tabs.map((tab) => {
         if (tab.id !== activeTabId) return tab;
@@ -438,11 +443,12 @@ export const useStore = create<AppState>((set, get) => {
       const tab = tabs.find((t) => t.id === activeTabId);
       if (!tab) return '';
       const shown = displayItems(tab, panes);
-      const layout = fitLayout(shown.length + 1, tab.layout);
+      const eff = resolveLayout(tab.layout, shown.length + 1);
+      const nextLayout = tab.layout === 'auto' ? 'auto' : eff; // keep auto sticky
       let slot = input.slot ?? -1;
       const used = new Set(shown.map((i) => i.slot));
-      if (slot < 0 || slot >= LAYOUTS[layout].capacity || used.has(slot))
-        slot = firstEmptySlot(shown, layout);
+      if (slot < 0 || slot >= LAYOUTS[eff].capacity || used.has(slot))
+        slot = firstEmptySlot(shown, eff);
       if (slot < 0) slot = shown.length;
 
       const pane: Pane = {
@@ -460,7 +466,7 @@ export const useStore = create<AppState>((set, get) => {
       commit({
         panes: [...panes, pane],
         tabs: tabs.map((t) =>
-          t.id === activeTabId ? { ...t, layout, items: [...t.items, { paneId: pane.id, slot }] } : t
+          t.id === activeTabId ? { ...t, layout: nextLayout, items: [...t.items, { paneId: pane.id, slot }] } : t
         ),
         runtime: {
           ...runtime,
@@ -585,13 +591,16 @@ export const useStore = create<AppState>((set, get) => {
       set({ runtime: { ...runtime, [paneId]: { ...prev, status: 'exited' } } });
     },
 
-    stopAllPanes: () => {
+    stopAllPanes: () => get().stopPanesWhere(() => true),
+
+    stopPanesWhere: (pred) => {
       const { panes, tabs, runtime, focusedPaneId } = get();
       const rt = { ...runtime };
       const removed = new Set<string>();
       for (const p of panes) {
         if ((p.kind ?? 'shell') === 'browser') continue;
         if ((rt[p.id]?.status ?? 'running') !== 'running') continue;
+        if (!pred(p)) continue;
         killSession(p.id);
         if (p.ephemeral) {
           // Temp terminals are one-shot — stopping deletes them.
@@ -696,7 +705,7 @@ export const useStore = create<AppState>((set, get) => {
         const tab = tabs.find((t) => t.id === activeTabId);
         if (tab && !tab.items.some((i) => i.paneId === paneId)) {
           const shown = displayItems(tab, panes);
-          const layout = fitLayout(shown.length, tab.layout);
+          const layout = resolveLayout(tab.layout, shown.length);
           let slot = firstEmptySlot(shown, layout);
           if (slot < 0) slot = shown.length;
           newTabs = tabs.map((t) =>

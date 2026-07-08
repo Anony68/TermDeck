@@ -23,6 +23,8 @@ export type LayoutPreset =
   | 'grid2x2'
   | 'big1plus2'
   | 'grid3x2';
+/** A tab's layout: a fixed preset, or 'auto' (re-fits to the pane count). */
+export type LayoutMode = LayoutPreset | 'auto';
 export type PaneStatus = 'running' | 'exited';
 export type FontSize = 'small' | 'medium' | 'large';
 /** UI language. */
@@ -71,7 +73,7 @@ export interface TabItem {
 export interface Tab {
   id: string;
   name: string;
-  layout: LayoutPreset;
+  layout: LayoutMode;
   pinned: boolean;
   items: TabItem[];
 }
@@ -81,7 +83,7 @@ export interface Settings {
   restoreCwd: boolean;
   restoreGrid: boolean;
   autoRunCommand: boolean;
-  defaultLayout: LayoutPreset;
+  defaultLayout: LayoutMode;
   shellPaths: Partial<Record<ShellKind, string>>;
   sidebarVisible: boolean;
   fontSize: FontSize;

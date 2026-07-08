@@ -128,6 +128,45 @@ fn kill_pty(state: State<PtyManager>, pane_id: String) -> Result<(), String> {
     state.kill(pane_id)
 }
 
+/// A leftover shell we're willing to reap: matched on the exact executable stem
+/// so unrelated names (e.g. "flush") never qualify.
+fn is_shell_process(p: &sysinfo::Process) -> bool {
+    let name = p.name().to_string_lossy().to_lowercase();
+    let stem = name.strip_suffix(".exe").unwrap_or(&name);
+    matches!(
+        stem,
+        "bash" | "sh" | "zsh" | "fish" | "powershell" | "pwsh" | "cmd" | "wsl" | "git-bash"
+    )
+}
+
+/// Kill leftover shell processes TermDeck spawned that are no longer attached to
+/// any pane (orphans from a crash or a failed kill). Strictly scoped to *direct
+/// children of this process* that look like shells and aren't in the live pid
+/// set — so it never touches the user's own terminals elsewhere on the system.
+#[tauri::command]
+fn cleanup_orphans(state: State<PtyManager>) -> usize {
+    use sysinfo::{ProcessesToUpdate, System};
+    let tracked: std::collections::HashSet<u32> =
+        state.pids().lock().unwrap().values().copied().collect();
+    let self_pid = std::process::id();
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+    let mut killed = 0usize;
+    for (pid, proc_) in sys.processes() {
+        let pidn = pid.as_u32();
+        if pidn == self_pid || tracked.contains(&pidn) {
+            continue;
+        }
+        if proc_.parent().map(|p| p.as_u32()) != Some(self_pid) {
+            continue; // only our own direct children can be TermDeck orphans
+        }
+        if is_shell_process(proc_) && proc_.kill() {
+            killed += 1;
+        }
+    }
+    killed
+}
+
 #[tauri::command]
 fn save_text(path: String, contents: String) -> Result<(), String> {
     std::fs::write(&path, contents).map_err(|e| e.to_string())
@@ -176,6 +215,7 @@ pub fn run() {
             write_pty,
             resize_pty,
             kill_pty,
+            cleanup_orphans,
             save_text,
             read_text,
             download_and_run,

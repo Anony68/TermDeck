@@ -10,6 +10,7 @@ import { ClaudeIcon } from './ClaudeIcon';
 import { ClaudePanel } from './ClaudePanel';
 import { ClaudeSessionsDialog } from './ClaudeSessionsDialog';
 import { FileBrowser } from './FileBrowser';
+import { IconPin, IconFolder, IconRefresh, IconClose, IconClock } from './icons';
 import { writeSession } from '../ipc/session';
 import { useT } from '../i18n';
 
@@ -232,12 +233,12 @@ export function Pane({ pane }: { pane: PaneModel }) {
             className="ssh-reconnect"
             title={t('pane.sshReconnecting', { n: sshStatus.attempt })}
           >
-            ⟳ {t('pane.sshReconnecting', { n: sshStatus.attempt })}
+            <IconRefresh size={11} className="icon-spin" /> {t('pane.sshReconnecting', { n: sshStatus.attempt })}
           </span>
         )}
         {pane.pinned && (
-          <span title={t('pane.pinnedTip')} style={{ fontSize: 11, lineHeight: 1 }}>
-            📌
+          <span title={t('pane.pinnedTip')} style={{ display: 'inline-flex', flex: 'none' }}>
+            <IconPin size={12} />
           </span>
         )}
         {!isBrowser && (
@@ -275,7 +276,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
               openSftpForPane(pane.id);
             }}
           >
-            📁
+            <IconFolder size={14} />
           </span>
         )}
         <span
@@ -283,15 +284,14 @@ export function Pane({ pane }: { pane: PaneModel }) {
           title={isBrowser ? t('pane.reconnect') : t('pane.restart')}
           onClick={() => restartPane(pane.id)}
         >
-          ⟳
+          <IconRefresh size={14} />
         </span>
         <span
           className="pane-ctl"
           title={t('pane.hide')}
-          style={{ fontSize: 11 }}
           onClick={() => removeFromTab(pane.id)}
         >
-          ✕
+          <IconClose size={13} />
         </span>
       </div>
 
@@ -341,7 +341,9 @@ export function Pane({ pane }: { pane: PaneModel }) {
             overflow: 'hidden',
           }}
         >
-          <span title={t('pane.uptime')}>⏱ {fmtUptime(now - (runtime?.startedAt ?? now))}</span>
+          <span title={t('pane.uptime')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <IconClock size={11} /> {fmtUptime(now - (runtime?.startedAt ?? now))}
+          </span>
           <span title="CPU">CPU {stat ? stat.cpu.toFixed(1) : '0.0'}%</span>
           <span title="RAM">RAM {stat ? fmtMem(stat.mem) : '—'}</span>
           {claudeRunning && (

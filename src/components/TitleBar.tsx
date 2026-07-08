@@ -1,5 +1,6 @@
 import { windowControls } from '../ipc/api';
 import { TabStrip } from './TabStrip';
+import { IconMinimize, IconMaximize, IconClose } from './icons';
 import { useT } from '../i18n';
 
 export function TitleBar() {
@@ -42,14 +43,14 @@ export function TitleBar() {
       <div data-tauri-drag-region style={{ flex: 1, alignSelf: 'stretch' }} />
 
       <div style={{ display: 'flex', height: 38 }}>
-        <div className="wc" title={t('win.minimize')} style={{ fontSize: 13 }} onClick={() => windowControls.minimize()}>
-          ─
+        <div className="wc" title={t('win.minimize')} onClick={() => windowControls.minimize()}>
+          <IconMinimize size={15} />
         </div>
-        <div className="wc" title={t('win.maximize')} style={{ fontSize: 11 }} onClick={() => windowControls.toggleMaximize()}>
-          ▢
+        <div className="wc" title={t('win.maximize')} onClick={() => windowControls.toggleMaximize()}>
+          <IconMaximize size={13} />
         </div>
-        <div className="wc close" title={t('win.close')} style={{ fontSize: 16 }} onClick={() => windowControls.close()}>
-          ✕
+        <div className="wc close" title={t('win.close')} onClick={() => windowControls.close()}>
+          <IconClose size={16} />
         </div>
       </div>
     </div>

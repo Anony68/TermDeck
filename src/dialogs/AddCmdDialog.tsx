@@ -4,6 +4,7 @@ import { SHELL_ORDER, SHELLS } from '../shells';
 import { pickFolder, pickFile } from '../ipc/api';
 import { secretSet, sshConfigHosts, parseTlp, type SshConfigHost } from '../ipc/ssh';
 import { ShellBadge } from '../components/ShellBadge';
+import { IconClose, IconImport, IconChevronDown, IconStar } from '../components/icons';
 import { useT, type TKey } from '../i18n';
 import type { PaneKind, ShellKind, SshConfig } from '../types';
 
@@ -47,7 +48,8 @@ export function AddCmdDialog() {
   const [shell, setShell] = useState<ShellKind>(editPane?.shell ?? firstAvail);
   const [cwd, setCwd] = useState(editPane?.cwd ?? '');
   const [presetCommand, setPresetCommand] = useState(editPane?.presetCommand ?? '');
-  const [autoStart, setAutoStart] = useState(editPane?.autoStart ?? true);
+  // New terminals default to Auto-reopen OFF (won't respawn on next app launch).
+  const [autoStart, setAutoStart] = useState(editPane?.autoStart ?? false);
   const [projectId, setProjectId] = useState<string>(editPane?.projectId ?? '');
   const [creatingNew, setCreatingNew] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -212,8 +214,8 @@ export function AddCmdDialog() {
           <span style={{ font: '600 15px var(--font-ui)', color: 'var(--text)', flex: 1 }}>
             {editing ? t('dlg.editTitle') : t('dlg.addTitle')}
           </span>
-          <span className="icon-btn" onClick={close} style={{ width: 24, height: 24, fontSize: 13 }}>
-            ✕
+          <span className="icon-btn" onClick={close} style={{ width: 24, height: 24 }}>
+            <IconClose size={15} />
           </span>
         </div>
 
@@ -304,16 +306,16 @@ export function AddCmdDialog() {
           {isRemote && (
             <>
               <div style={{ position: 'relative', display: 'flex', gap: 8 }}>
-                <button className="ghost-btn" style={{ padding: '6px 12px', fontSize: 11.5 }} onClick={openSshConfig}>
-                  ⤓ {t('dlg.fromSshConfig')} ▾
+                <button className="ghost-btn" style={{ padding: '6px 12px', fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={openSshConfig}>
+                  <IconImport size={13} /> {t('dlg.fromSshConfig')} <IconChevronDown size={13} />
                 </button>
                 <button
                   className="ghost-btn"
-                  style={{ padding: '6px 12px', fontSize: 11.5 }}
+                  style={{ padding: '6px 12px', fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 5 }}
                   title={t('dlg.fromTlpHint')}
                   onClick={importTlp}
                 >
-                  ⤓ {t('dlg.fromTlp')}
+                  <IconImport size={13} /> {t('dlg.fromTlp')}
                 </button>
                 {showCfg && (
                   <div
@@ -412,11 +414,12 @@ export function AddCmdDialog() {
                       {recentKeys.length > 0 && (
                         <button
                           className="ghost-btn"
-                          style={{ padding: '8px 12px' }}
+                          style={{ padding: '8px 12px', display: 'inline-flex', alignItems: 'center', gap: 3 }}
                           title={t('dlg.savedKeys')}
                           onClick={() => setShowKeys((v) => !v)}
                         >
-                          ★ ▾
+                          <IconStar size={14} />
+                          <IconChevronDown size={13} />
                         </button>
                       )}
                       <button className="ghost-btn" style={{ padding: '8px 14px' }} onClick={chooseKey}>
@@ -471,9 +474,9 @@ export function AddCmdDialog() {
                                 className="icon-btn"
                                 title={t('dlg.forgetKey')}
                                 onClick={() => forgetKey(k)}
-                                style={{ width: 20, height: 20, fontSize: 11, flex: 'none' }}
+                                style={{ width: 20, height: 20, flex: 'none' }}
                               >
-                                ✕
+                                <IconClose size={12} />
                               </span>
                             </div>
                           ))}

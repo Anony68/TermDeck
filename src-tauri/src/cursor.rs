@@ -8,18 +8,23 @@ use base64::Engine;
 use serde::Serialize;
 use serde_json::Value;
 
-/// Monthly plan usage. `max_requests == 0` means the plan has no fixed request
-/// quota (usage-based pricing) — the UI then shows the raw count only.
+/// Billing-cycle usage from Cursor's `/api/usage-summary` (the same numbers the
+/// dashboard shows — works for included-credit plans like Ultra too).
 #[derive(Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CursorUsage {
     pub found: bool,
-    pub used_requests: u64,
-    pub max_requests: u64,
-    /// Percent of the monthly quota used (0 when the quota is unknown).
+    /// Membership tier (e.g. "ultra", "pro", "free"); "" if unknown.
+    pub plan: String,
+    /// Percent of the included allowance used this cycle (0–100).
     pub utilization: f64,
-    /// ISO start of the current billing month; it resets one month later.
-    pub start_of_month: String,
+    /// Raw used / limit of the included allowance (0 when not applicable).
+    pub used: u64,
+    pub limit: u64,
+    /// ISO end of the current billing cycle (when the allowance resets).
+    pub resets_at: String,
+    /// Plans with no fixed cap.
+    pub unlimited: bool,
 }
 
 fn home() -> Option<std::path::PathBuf> {
@@ -115,46 +120,44 @@ fn fetch_usage() -> CursorUsage {
         .timeout_global(Some(std::time::Duration::from_secs(10)))
         .build()
         .into();
-    let Ok(resp) = agent
-        .get(format!("https://cursor.com/api/usage?user={user}"))
-        .header(
-            "Cookie",
-            &format!("WorkosCursorSessionToken={user}%3A%3A{token}"),
-        )
-        .call()
-    else {
+    let cookie = format!("WorkosCursorSessionToken={user}%3A%3A{token}");
+
+    // GET helper returning a parsed JSON body (None on any failure).
+    let get_json = |url: &str| -> Option<Value> {
+        let resp = agent.get(url).header("Cookie", &cookie).call().ok()?;
+        serde_json::from_str::<Value>(&resp.into_body().read_to_string().ok()?).ok()
+    };
+
+    // /api/usage-summary mirrors the dashboard: included-allowance %, raw
+    // used/limit, plan tier and the billing-cycle reset — for every plan type.
+    let Some(v) = get_json("https://cursor.com/api/usage-summary") else {
         return none;
     };
-    let Ok(txt) = resp.into_body().read_to_string() else {
-        return none;
-    };
-    let Ok(v) = serde_json::from_str::<Value>(&txt) else {
-        return none;
-    };
-    let premium = v.get("gpt-4");
-    let used = premium
-        .and_then(|p| p.get("numRequests"))
-        .and_then(|x| x.as_u64())
-        .unwrap_or(0);
-    let max = premium
-        .and_then(|p| p.get("maxRequestUsage"))
-        .and_then(|x| x.as_u64())
-        .unwrap_or(0);
-    let start = v
-        .get("startOfMonth")
+    let plan = v
+        .get("membershipType")
         .and_then(|x| x.as_str())
         .unwrap_or("")
         .to_string();
+    let unlimited = v.get("isUnlimited").and_then(|x| x.as_bool()).unwrap_or(false);
+    let resets_at = v
+        .get("billingCycleEnd")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let p = v.get("individualUsage").and_then(|u| u.get("plan"));
+    let g = |k: &str| p.and_then(|p| p.get(k)).and_then(|x| x.as_f64()).unwrap_or(0.0);
+    let utilization = g("totalPercentUsed");
+    let used = g("used") as u64;
+    let limit = g("limit") as u64;
+
     CursorUsage {
-        found: premium.is_some() || !start.is_empty(),
-        used_requests: used,
-        max_requests: max,
-        utilization: if max > 0 {
-            used as f64 * 100.0 / max as f64
-        } else {
-            0.0
-        },
-        start_of_month: start,
+        found: !plan.is_empty() || p.is_some(),
+        plan,
+        utilization,
+        used,
+        limit,
+        resets_at,
+        unlimited,
     }
 }
 

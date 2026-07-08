@@ -3,6 +3,7 @@ import { useStore } from '../state/store';
 import { IS_MAC, SHELL_ORDER, SHELLS } from '../shells';
 import { LAYOUT_ORDER, LAYOUTS } from '../layouts';
 import { PresetIcon } from '../components/PresetIcon';
+import { IconClose, IconCheck } from '../components/icons';
 import { FONT_ORDER, FONT_PX } from '../fontSizes';
 import {
   checkUpdate,
@@ -87,8 +88,8 @@ export function SettingsWindow() {
         >
           <span style={{ font: '600 12.5px var(--font-ui)', color: 'var(--text)' }}>{t('set.title')}</span>
           <div style={{ flex: 1 }} />
-          <div className="wc close" style={{ height: 38, fontSize: 12 }} onClick={closeSettings}>
-            ✕
+          <div className="wc close" style={{ height: 38 }} onClick={closeSettings}>
+            <IconClose size={15} />
           </div>
         </div>
 
@@ -481,7 +482,7 @@ function LayoutSection() {
         {t('set.layout.desc')}
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {LAYOUT_ORDER.map((id) => {
+        {[...LAYOUT_ORDER, 'auto' as const].map((id) => {
           const active = defaultLayout === id;
           return (
             <div
@@ -506,7 +507,7 @@ function LayoutSection() {
                   color: active ? 'var(--accent)' : 'var(--text-2)',
                 }}
               >
-                {LAYOUTS[id].label}
+                {id === 'auto' ? 'Auto' : LAYOUTS[id].label}
               </span>
             </div>
           );
@@ -724,9 +725,9 @@ function ProjectsSection() {
               className="pane-ctl danger"
               title={t('set.projects.delete')}
               onClick={() => removeProject(pr.id)}
-              style={{ width: 22, height: 22, fontSize: 12 }}
+              style={{ width: 22, height: 22 }}
             >
-              ✕
+              <IconClose size={13} />
             </span>
           </div>
         ))}
@@ -808,8 +809,8 @@ function UpdateSection() {
           {checking ? t('set.update.checking') : t('set.update.check')}
         </button>
         {result && !result.hasUpdate && (
-          <span style={{ font: '400 12px var(--font-ui)', color: 'var(--accent)' }}>
-            {t('set.update.latest')}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, font: '400 12px var(--font-ui)', color: 'var(--accent)' }}>
+            <IconCheck size={14} /> {t('set.update.latest')}
           </span>
         )}
         {error && <span style={{ font: '400 12px var(--font-ui)', color: 'var(--danger)' }}>{error}</span>}

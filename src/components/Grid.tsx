@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useStore, activeTabSelector, displayItems } from '../state/store';
-import { LAYOUTS, fitLayout } from '../layouts';
+import { LAYOUTS, resolveLayout } from '../layouts';
 import { SAVED_DND_MIME } from '../dnd';
 import { Pane } from './Pane';
+import { IconPlus } from './icons';
 import { useT } from '../i18n';
 
 export function Grid() {
@@ -17,10 +18,19 @@ export function Grid() {
   if (!tab) return null;
   // This tab shows its own referenced cmds + any pinned cmds; grid grows to fit them.
   const items = displayItems(tab, panes);
-  const layout = LAYOUTS[fitLayout(items.length, tab.layout)];
+  const layout = LAYOUTS[resolveLayout(tab.layout, items.length)];
   const slots = Array.from({ length: layout.capacity }, (_, i) => i);
   const paneById = new Map(panes.map((p) => [p.id, p]));
-  const paneBySlot = new Map(items.map((it) => [it.slot, paneById.get(it.paneId)!]));
+  // Auto mode re-fits on every change, so compact panes into slots 0..n-1 by slot
+  // order — otherwise a pane left at a slot beyond the shrunk capacity would vanish.
+  const paneBySlot =
+    tab.layout === 'auto'
+      ? new Map(
+          [...items]
+            .sort((a, b) => a.slot - b.slot)
+            .map((it, i) => [i, paneById.get(it.paneId)!] as const)
+        )
+      : new Map(items.map((it) => [it.slot, paneById.get(it.paneId)!]));
 
   return (
     <div
@@ -80,7 +90,7 @@ export function Grid() {
                   minHeight: 0,
                 }}
               >
-                <span style={{ fontSize: 20 }}>＋</span>
+                <IconPlus size={20} />
                 <span style={{ font: '400 11px var(--font-ui)' }}>{t('grid.emptySlot')}</span>
               </button>
             )}

@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../state/store';
 import { SAVED_DND_MIME } from '../dnd';
+import { SHELL_ORDER, SHELLS } from '../shells';
+import { cleanupOrphans } from '../ipc/api';
 import { PaneBadge } from './ShellBadge';
-import { ContextMenu } from './ContextMenu';
+import { ContextMenu, type MenuItem } from './ContextMenu';
 import { ClaudeIcon } from './ClaudeIcon';
+import { IconPin, IconTemp, IconPlay, IconStop, IconPlus, IconSearch, IconFolder, IconSettings, IconChevronDown } from './icons';
 import { useT, type TKey } from '../i18n';
 import type { Pane, PaneKind, Project } from '../types';
 
@@ -26,6 +29,7 @@ export function Sidebar() {
   const showPaneInTab = useStore((s) => s.showPaneInTab);
   const stopPane = useStore((s) => s.stopPane);
   const stopAllPanes = useStore((s) => s.stopAllPanes);
+  const stopPanesWhere = useStore((s) => s.stopPanesWhere);
   const restartPane = useStore((s) => s.restartPane);
   const removePane = useStore((s) => s.removePane);
   const togglePinPane = useStore((s) => s.togglePinPane);
@@ -39,17 +43,26 @@ export function Sidebar() {
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [projectFilter, setProjectFilter] = useState<string>('all'); // 'all' | '__none__' | projectId
+  const [runningOnly, setRunningOnly] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; paneId: string } | null>(null);
+  const [stopMenu, setStopMenu] = useState<{ x: number; y: number } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!notice) return;
+    const id = setTimeout(() => setNotice(null), 3500);
+    return () => clearTimeout(id);
+  }, [notice]);
 
   const menuPane = menu ? panes.find((p) => p.id === menu.paneId) : undefined;
   const menuRunning = menu ? (runtime[menu.paneId]?.status ?? 'running') === 'running' : false;
 
   const isUngrouped = (p: Pane) => !p.projectId || !projects.some((pr) => pr.id === p.projectId);
 
-  const runningCount = panes.filter(
-    (p) => kindOf(p) !== 'browser' && (runtime[p.id]?.status ?? 'running') === 'running'
-  ).length;
+  const isRunning = (p: Pane) =>
+    kindOf(p) !== 'browser' && (runtime[p.id]?.status ?? 'running') === 'running';
+  const runningCount = panes.filter(isRunning).length;
 
   // queryBase = query filter only. Type-chip counts use this so each type keeps
   // its true count regardless of which type is currently selected.
@@ -61,13 +74,15 @@ export function Sidebar() {
   // Base = query + type filters (project filter applied after, so chip counts are stable).
   const base = queryBase.filter((c) => typeFilter === 'all' || kindOf(c) === typeFilter);
   const noneCount = base.filter(isUngrouped).length;
-  const filtered = base.filter((p) =>
-    projectFilter === 'all'
-      ? true
-      : projectFilter === '__none__'
-        ? isUngrouped(p)
-        : p.projectId === projectFilter
-  );
+  const filtered = base
+    .filter((p) =>
+      projectFilter === 'all'
+        ? true
+        : projectFilter === '__none__'
+          ? isUngrouped(p)
+          : p.projectId === projectFilter
+    )
+    .filter((p) => !runningOnly || isRunning(p));
 
   // Group by project only in "all projects" mode; a specific filter shows a flat list.
   const groups: Array<{ key: string; project?: Project; items: Pane[] }> = [];
@@ -88,6 +103,45 @@ export function Sidebar() {
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
+
+  // "Stop / clean up" menu: stop all, stop per shell type, and reap orphan procs.
+  const stopMenuItems = (): MenuItem[] => {
+    const shellCounts = SHELL_ORDER.map((k) => ({
+      k,
+      n: panes.filter((p) => isRunning(p) && kindOf(p) === 'shell' && p.shell === k).length,
+    })).filter((x) => x.n > 0);
+    const sshN = panes.filter((p) => isRunning(p) && kindOf(p) === 'ssh').length;
+    const items: MenuItem[] = [
+      {
+        label: `${t('sidebar.stopAll')} (${runningCount})`,
+        danger: true,
+        disabled: runningCount === 0,
+        onClick: stopAllPanes,
+      },
+    ];
+    if (shellCounts.length || sshN) items.push({ label: '', separator: true });
+    for (const { k, n } of shellCounts) {
+      items.push({
+        label: `${t('sidebar.stopType', { name: SHELLS[k].label })} (${n})`,
+        onClick: () => stopPanesWhere((p) => kindOf(p) === 'shell' && p.shell === k),
+      });
+    }
+    if (sshN) {
+      items.push({
+        label: `${t('sidebar.stopType', { name: 'SSH' })} (${sshN})`,
+        onClick: () => stopPanesWhere((p) => kindOf(p) === 'ssh'),
+      });
+    }
+    items.push({ label: '', separator: true });
+    items.push({
+      label: t('sidebar.cleanupOrphans'),
+      onClick: async () => {
+        const n = await cleanupOrphans();
+        setNotice(n > 0 ? t('sidebar.cleanupDone', { n }) : t('sidebar.cleanupNone'));
+      },
+    });
+    return items;
+  };
 
   const renderItem = (c: Pane) => {
     const running = (runtime[c.id]?.status ?? 'running') === 'running';
@@ -140,13 +194,13 @@ export function Sidebar() {
               />
             )}
             {c.pinned && (
-              <span title={t('sidebar.pinned')} style={{ fontSize: 10 }}>
-                📌
+              <span title={t('sidebar.pinned')} style={{ display: 'inline-flex', flex: 'none' }}>
+                <IconPin size={11} />
               </span>
             )}
             {c.ephemeral && (
-              <span title={t('sidebar.tempBadge')} style={{ fontSize: 10, flex: 'none' }}>
-                ⚡
+              <span title={t('sidebar.tempBadge')} style={{ display: 'inline-flex', flex: 'none', color: 'var(--warn)' }}>
+                <IconTemp size={11} />
               </span>
             )}
           </div>
@@ -174,7 +228,7 @@ export function Sidebar() {
           {running ? (
             <span style={{ width: 9, height: 9, background: 'var(--danger)', borderRadius: 2, display: 'block' }} />
           ) : (
-            <span style={{ color: 'var(--accent)', fontSize: 11 }}>▶</span>
+            <IconPlay size={12} color="var(--accent)" />
           )}
         </span>
       </div>
@@ -204,32 +258,42 @@ export function Sidebar() {
         >
           {t('sidebar.title')}
         </span>
-        {runningCount > 0 && (
-          <button
-            className="link-btn"
-            title={t('sidebar.stopAllTitle')}
-            style={{ color: 'var(--danger)', borderColor: 'var(--danger)', padding: '3px 8px', background: 'transparent' }}
-            onClick={stopAllPanes}
-          >
-            {t('sidebar.stopAll')} {runningCount}
-          </button>
-        )}
+        <button
+          className="link-btn"
+          title={t('sidebar.stopMenuTitle')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '3px 8px',
+            background: 'transparent',
+            color: runningCount > 0 ? 'var(--danger)' : 'var(--text-muted)',
+            borderColor: runningCount > 0 ? 'var(--danger)' : 'var(--border-3)',
+          }}
+          onClick={(e) => setStopMenu({ x: e.clientX, y: e.clientY })}
+        >
+          <IconStop size={13} />
+          {runningCount > 0 ? runningCount : ''}
+          <IconChevronDown size={11} />
+        </button>
       </div>
       <div style={{ padding: '0 12px 8px', display: 'flex', gap: 6 }}>
-        <button className="accent-btn" style={{ flex: 1, justifyContent: 'center' }} onClick={() => openAddCmd()}>
-          {t('sidebar.newTerminal')}
+        <button className="accent-btn" style={{ flex: 1, justifyContent: 'center', gap: 5 }} onClick={() => openAddCmd()}>
+          <IconPlus size={15} /> {t('sidebar.newTerminal')}
         </button>
         <button
           className="outline-accent-btn"
           title={t('sidebar.tempTerminalTitle')}
           onClick={addTempPane}
-          style={{ flex: 'none', padding: '6px 10px', justifyContent: 'center' }}
+          style={{ flex: 'none', padding: '6px 10px', justifyContent: 'center', gap: 4 }}
         >
-          {t('sidebar.tempTerminal')}
+          <IconTemp size={13} /> {t('sidebar.tempTerminal')}
         </button>
       </div>
       <div style={{ margin: '2px 12px 8px', display: 'flex', alignItems: 'center', gap: 7 }}>
-        <span style={{ color: 'var(--text-muted)' }}>⌕</span>
+        <span style={{ display: 'inline-flex', color: 'var(--text-muted)' }}>
+          <IconSearch size={14} />
+        </span>
         <input
           className="field"
           placeholder={t('sidebar.search')}
@@ -256,19 +320,58 @@ export function Sidebar() {
         })}
       </div>
 
+      {/* Running-only filter */}
+      <div style={{ display: 'flex', padding: '0 12px 8px' }}>
+        <button
+          className={`side-chip${runningOnly ? ' active' : ''}`}
+          onClick={() => setRunningOnly((v) => !v)}
+          title={t('sidebar.runningOnlyTitle')}
+          style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              flex: 'none',
+              background: runningCount > 0 ? 'var(--accent)' : 'var(--text-muted)',
+              boxShadow: runningCount > 0 ? '0 0 6px rgba(45,212,167,0.8)' : 'none',
+            }}
+          />
+          {t('sidebar.runningOnly')} <span style={{ opacity: 0.6 }}>{runningCount}</span>
+        </button>
+      </div>
+
+      {notice && (
+        <div
+          onClick={() => setNotice(null)}
+          style={{
+            margin: '0 12px 8px',
+            padding: '5px 9px',
+            borderRadius: 6,
+            background: 'var(--accent-soft-2)',
+            color: 'var(--accent)',
+            font: '400 10.5px var(--font-mono)',
+            cursor: 'pointer',
+          }}
+        >
+          {notice}
+        </div>
+      )}
+
       {/* Projects — prominent filter bar + manage shortcut */}
       <div style={{ padding: '0 12px 8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 5 }}>
-          <span style={{ font: '700 10px var(--font-ui)', color: 'var(--accent)', letterSpacing: '0.08em', flex: 1 }}>
-            📁 {t('sidebar.projects')}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, font: '700 10px var(--font-ui)', color: 'var(--accent)', letterSpacing: '0.08em', flex: 1 }}>
+            <IconFolder size={12} /> {t('sidebar.projects')}
           </span>
           <span
             className="link-btn"
             title={t('sidebar.manageProjects')}
             onClick={() => openSettings('projects')}
-            style={{ fontSize: 10.5 }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5 }}
           >
-            {t('sidebar.manageProjects')} ⚙
+            {t('sidebar.manageProjects')} <IconSettings size={12} />
           </span>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -341,10 +444,10 @@ export function Sidebar() {
                     userSelect: 'none',
                   }}
                 >
-                  <span style={{ fontSize: 8, transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.12s' }}>
-                    ▼
+                  <span style={{ display: 'inline-flex', transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.12s' }}>
+                    <IconChevronDown size={13} />
                   </span>
-                  {g.project && <span style={{ fontSize: 10 }}>📁</span>}
+                  {g.project && <IconFolder size={12} style={{ flex: 'none' }} />}
                   <span
                     style={{
                       textTransform: 'uppercase',
@@ -402,6 +505,15 @@ export function Sidebar() {
             { label: '', separator: true },
             { label: t('pane.deleteTerminal'), danger: true, onClick: () => removePane(menu.paneId) },
           ]}
+        />
+      )}
+
+      {stopMenu && (
+        <ContextMenu
+          x={stopMenu.x}
+          y={stopMenu.y}
+          onClose={() => setStopMenu(null)}
+          items={stopMenuItems()}
         />
       )}
     </div>

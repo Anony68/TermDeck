@@ -2,6 +2,17 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { FileEntry } from '../ipc/ssh';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { joinPath } from './pathUtils';
+import {
+  IconParent,
+  IconRefresh,
+  IconNewFolder,
+  IconSearch,
+  IconFolder,
+  IconFile,
+  IconSymlink,
+  IconArrowRight,
+  IconArrowLeft,
+} from './icons';
 import { useT } from '../i18n';
 
 export interface FsBackend {
@@ -17,6 +28,13 @@ export interface FsBackend {
   home?: () => Promise<string>;
   /** Path separator + join, so local (\\) and remote (/) behave correctly. */
   sep: string;
+}
+
+/** Row icon: symlink / folder (blue) / file (muted) — flat + color-coded. */
+function EntryIcon({ isDir, isSymlink }: { isDir: boolean; isSymlink?: boolean }) {
+  if (isSymlink) return <IconSymlink size={14} color="var(--sh-wsl)" />;
+  if (isDir) return <IconFolder size={14} color="var(--sh-ps)" />;
+  return <IconFile size={14} color="var(--text-muted)" />;
 }
 
 function fmtSize(bytes: number, isDir: boolean): string {
@@ -46,6 +64,7 @@ export function FilePanel({
   initialPath,
   accent,
   transferLabel,
+  transferDir,
   onTransfer,
   onPathChange,
   refreshKey,
@@ -56,8 +75,10 @@ export function FilePanel({
   backend: FsBackend;
   initialPath: string;
   accent: string;
-  /** e.g. "Tải lên ▶" (local) or "◀ Tải xuống" (remote). */
+  /** Plain-text transfer action label (e.g. "Tải lên"); used in button + menu. */
   transferLabel: string;
+  /** Direction of the transfer, for the button's arrow icon. */
+  transferDir?: 'right' | 'left';
   onTransfer: (entries: FileEntry[], fromPath: string) => void;
   /** Called whenever this panel's current directory changes (transfer destination). */
   onPathChange?: (path: string) => void;
@@ -77,6 +98,13 @@ export function FilePanel({
   const [editingPath, setEditingPath] = useState(false);
   const [pathDraft, setPathDraft] = useState(path);
   const [confirmDel, setConfirmDel] = useState<FileEntry[] | null>(null);
+  // Inline rename: which entry is being edited + its draft name.
+  const [renaming, setRenaming] = useState<{ name: string; draft: string } | null>(null);
+  // Transient error banner (webview alert() is unreliable, so we render our own).
+  const [notice, setNotice] = useState<string | null>(null);
+  // In-panel text prompt (WKWebView's window.prompt returns null, so mkdir/chmod
+  // need their own input). Holds the label, current draft and the submit action.
+  const [ask, setAsk] = useState<{ label: string; draft: string; onOk: (v: string) => void } | null>(null);
   const [marquee, setMarquee] = useState<{ top: number; height: number } | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -133,6 +161,13 @@ export function FilePanel({
     onPathChange?.(path);
     void load(path);
   }, [path, load, refreshKey, onPathChange]);
+
+  // Auto-dismiss the error banner.
+  useEffect(() => {
+    if (!notice) return;
+    const id = setTimeout(() => setNotice(null), 4500);
+    return () => clearTimeout(id);
+  }, [notice]);
 
   // End a rubber-band drag when the mouse is released anywhere.
   useEffect(() => {
@@ -245,6 +280,32 @@ export function FilePanel({
   // Keyboard on the list: Backspace = parent, Delete = remove, F5 = reload,
   // letters = type-ahead jump, arrows = move.
   const onListKeyDown = (e: React.KeyboardEvent) => {
+    if (renaming) return; // the inline input handles its own keys
+    // Ctrl/Cmd+A = select every visible entry.
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+      e.preventDefault();
+      setSelected(new Set(visible.map((v) => v.name)));
+      return;
+    }
+    // F2 = rename the focused entry (or the only selected one).
+    if (e.key === 'F2') {
+      e.preventDefault();
+      const cur =
+        anchorRef.current >= 0
+          ? visible[anchorRef.current]
+          : selected.size === 1
+            ? visible.find((v) => selected.has(v.name))
+            : undefined;
+      if (cur) startRename(cur);
+      return;
+    }
+    // Ctrl/Cmd+Backspace = delete selected (like Delete). Plain Backspace = parent.
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Backspace') {
+      e.preventDefault();
+      const sel = selectedEntries();
+      if (sel.length) setConfirmDel(sel);
+      return;
+    }
     if (e.key === 'Backspace') {
       e.preventDefault();
       goParent();
@@ -301,42 +362,58 @@ export function FilePanel({
 
   const selectedEntries = () => entries.filter((e) => selected.has(e.name));
 
-  const doMkdir = async () => {
-    const name = window.prompt(t('fb.promptNewFolder'));
-    if (!name?.trim()) return;
+  const doMkdir = () => {
+    setMenu(null);
+    setAsk({
+      label: t('fb.promptNewFolder'),
+      draft: '',
+      onOk: async (name) => {
+        if (!name.trim()) return;
+        try {
+          await backend.mkdir(joinPath(path, name.trim(), backend.sep));
+          await load(path);
+        } catch (e) {
+          setNotice(t('fb.errMkdir', { err: String(e) }));
+        }
+      },
+    });
+  };
+  // Start inline rename (F2 or context menu). The row renders an input.
+  const startRename = (entry: FileEntry) => {
+    setMenu(null);
+    setRenaming({ name: entry.name, draft: entry.name });
+  };
+  const commitRename = async () => {
+    const r = renaming;
+    if (!r) return;
+    setRenaming(null);
+    const next = r.draft.trim();
+    if (!next || next === r.name) return;
     try {
-      await backend.mkdir(joinPath(path, name.trim(), backend.sep));
-      void load(path);
+      await backend.rename(joinPath(path, r.name, backend.sep), joinPath(path, next, backend.sep));
+      await load(path);
     } catch (e) {
-      alert(t('fb.errMkdir', { err: String(e) }));
+      setNotice(t('fb.errRename', { err: String(e) }));
     }
   };
-  const doRename = async (entry: FileEntry) => {
-    const name = window.prompt(t('fb.promptRename'), entry.name);
-    if (!name?.trim() || name === entry.name) return;
-    try {
-      await backend.rename(
-        joinPath(path, entry.name, backend.sep),
-        joinPath(path, name.trim(), backend.sep)
-      );
-      void load(path);
-    } catch (e) {
-      alert(t('fb.errRename', { err: String(e) }));
-    }
-  };
-  const doChmod = async (entry: FileEntry) => {
+  const doChmod = (entry: FileEntry) => {
     if (!backend.chmod) return;
+    setMenu(null);
     const cur = (entry.mode & 0o777).toString(8).padStart(3, '0');
-    const input = window.prompt(t('fb.chmodPrompt'), cur);
-    if (!input?.trim()) return;
-    const mode = parseInt(input.trim(), 8);
-    if (Number.isNaN(mode)) return;
-    try {
-      await backend.chmod(joinPath(path, entry.name, backend.sep), mode);
-      void load(path);
-    } catch (e) {
-      alert(t('fb.errChmod', { err: String(e) }));
-    }
+    setAsk({
+      label: t('fb.chmodPrompt'),
+      draft: cur,
+      onOk: async (input) => {
+        const mode = parseInt(input.trim(), 8);
+        if (Number.isNaN(mode)) return;
+        try {
+          await backend.chmod!(joinPath(path, entry.name, backend.sep), mode);
+          await load(path);
+        } catch (e) {
+          setNotice(t('fb.errChmod', { err: String(e) }));
+        }
+      },
+    });
   };
   // Actual deletion — the confirm popup gates this.
   const performRemove = async (list: FileEntry[]) => {
@@ -346,7 +423,7 @@ export function FilePanel({
       for (const e of list) await backend.remove(joinPath(path, e.name, backend.sep), e.isDir);
       void load(path);
     } catch (e) {
-      alert(t('fb.errRemove', { err: String(e) }));
+      setNotice(t('fb.errRemove', { err: String(e) }));
     }
   };
 
@@ -357,11 +434,16 @@ export function FilePanel({
     return [
       { label: transferLabel, disabled: list.length === 0, onClick: () => onTransfer(list, path) },
       { label: t('fb.open'), disabled: !target?.isDir, onClick: () => target && openEntry(target) },
-      { label: t('fb.rename'), disabled: !target, onClick: () => target && doRename(target) },
+      { label: t('fb.rename'), disabled: !target, onClick: () => target && startRename(target) },
       ...(backend.chmod
         ? [{ label: t('fb.chmod'), disabled: !target, onClick: () => target && doChmod(target) }]
         : []),
       { label: '', separator: true },
+      {
+        label: t('fb.selectAll'),
+        disabled: visible.length === 0,
+        onClick: () => setSelected(new Set(visible.map((v) => v.name))),
+      },
       { label: t('fb.newFolder'), onClick: doMkdir },
       { label: t('fb.refresh'), onClick: () => load(path) },
       { label: '', separator: true },
@@ -401,13 +483,13 @@ export function FilePanel({
         </span>
         <div style={{ display: 'flex', gap: 2, marginLeft: 'auto' }}>
           <button className="fb-tool" title={t('fb.toParent')} onClick={goParent}>
-            ↑
+            <IconParent size={15} />
           </button>
           <button className="fb-tool" title={t('fb.refresh')} onClick={() => load(path)}>
-            ⟳
+            <IconRefresh size={14} />
           </button>
           <button className="fb-tool" title={t('fb.newFolder')} onClick={doMkdir}>
-            ⊕
+            <IconNewFolder size={14} />
           </button>
           {backend.search && (
             <button
@@ -419,7 +501,7 @@ export function FilePanel({
                 setSearchQuery('');
               }}
             >
-              🔍
+              <IconSearch size={14} />
             </button>
           )}
         </div>
@@ -529,7 +611,9 @@ export function FilePanel({
                 }}
               >
                 <span className="fb-c-name">
-                  <span className="fb-ico">{r.isDir ? '📁' : '📄'}</span>
+                  <span className="fb-ico">
+                    <EntryIcon isDir={r.isDir} />
+                  </span>
                   {r.name}
                 </span>
                 <span
@@ -554,7 +638,10 @@ export function FilePanel({
         {path && (
           <div className="fb-row fb-item" onDoubleClick={goParent}>
             <span className="fb-c-name">
-              <span className="fb-ico">📁</span>..
+              <span className="fb-ico">
+                <IconFolder size={14} color="var(--sh-ps)" />
+              </span>
+              ..
             </span>
             <span className="fb-c-size" />
             <span className="fb-c-date" />
@@ -577,8 +664,39 @@ export function FilePanel({
             }}
           >
             <span className="fb-c-name" title={e.perms ? `${e.perms}  ${e.name}` : e.name}>
-              <span className="fb-ico">{e.isSymlink ? '🔗' : e.isDir ? '📁' : '📄'}</span>
-              {e.name}
+              <span className="fb-ico">
+                <EntryIcon isDir={e.isDir} isSymlink={e.isSymlink} />
+              </span>
+              {renaming?.name === e.name ? (
+                <input
+                  autoFocus
+                  className="field mono"
+                  value={renaming.draft}
+                  onChange={(ev) => setRenaming({ name: e.name, draft: ev.target.value })}
+                  onMouseDown={(ev) => ev.stopPropagation()}
+                  onDoubleClick={(ev) => ev.stopPropagation()}
+                  onKeyDown={(ev) => {
+                    ev.stopPropagation();
+                    if (ev.key === 'Enter') {
+                      ev.preventDefault();
+                      void commitRename();
+                    } else if (ev.key === 'Escape') {
+                      ev.preventDefault();
+                      setRenaming(null);
+                    }
+                  }}
+                  onBlur={() => void commitRename()}
+                  onFocus={(ev) => {
+                    // Preselect the base name (keep the extension) for quick edits.
+                    const dot = e.name.lastIndexOf('.');
+                    if (!e.isDir && dot > 0) ev.target.setSelectionRange(0, dot);
+                    else ev.target.select();
+                  }}
+                  style={{ padding: '1px 5px', fontSize: 11, flex: 1, minWidth: 0 }}
+                />
+              ) : (
+                e.name
+              )}
             </span>
             <span className="fb-c-size">{fmtSize(e.size, e.isDir)}</span>
             <span className="fb-c-date">{fmtDate(e.modified)}</span>
@@ -587,6 +705,26 @@ export function FilePanel({
           </>
         )}
       </div>
+
+      {notice && (
+        <div
+          onClick={() => setNotice(null)}
+          title={notice}
+          style={{
+            padding: '5px 8px',
+            borderTop: '1px solid var(--border-2)',
+            background: 'color-mix(in srgb, var(--danger) 18%, var(--surface-2))',
+            color: 'var(--danger)',
+            font: '400 10.5px var(--font-mono)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            cursor: 'pointer',
+          }}
+        >
+          {notice}
+        </div>
+      )}
 
       {/* Footer: transfer button + selection count */}
       <div
@@ -603,16 +741,21 @@ export function FilePanel({
           className="fb-transfer"
           disabled={!selected.size}
           onClick={() => onTransfer(selectedEntries(), path)}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
         >
+          {transferDir === 'left' && <IconArrowLeft size={13} />}
           {transferLabel}
+          {transferDir === 'right' && <IconArrowRight size={13} />}
         </button>
         {onSync && (
           <button
             className="fb-sync-btn"
             title="Đồng bộ toàn bộ thư mục này (mirror — cần xác nhận)"
             onClick={onSync}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
           >
-            {syncLabel ?? `⟳ ${t('fb.verbSync')}`}
+            <IconRefresh size={13} />
+            {syncLabel ?? t('fb.verbSync')}
           </button>
         )}
         <span style={{ marginLeft: 'auto', font: '400 10px var(--font-mono)', color: 'var(--text-muted)' }}>
@@ -631,6 +774,94 @@ export function FilePanel({
           onConfirm={() => performRemove(confirmDel)}
         />
       )}
+
+      {ask && (
+        <PromptDialog
+          label={ask.label}
+          initial={ask.draft}
+          onCancel={() => setAsk(null)}
+          onConfirm={(v) => {
+            setAsk(null);
+            ask.onOk(v);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Small in-panel text prompt (replaces window.prompt, unavailable in WKWebView). */
+function PromptDialog({
+  label,
+  initial,
+  onCancel,
+  onConfirm,
+}: {
+  label: string;
+  initial: string;
+  onCancel: () => void;
+  onConfirm: (value: string) => void;
+}) {
+  const t = useT();
+  const [val, setVal] = useState(initial);
+  return (
+    <div
+      onMouseDown={onCancel}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'rgba(5,7,10,0.55)',
+        display: 'grid',
+        placeItems: 'center',
+        zIndex: 46,
+      }}
+    >
+      <div
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{
+          width: 320,
+          background: 'var(--surface-2)',
+          border: '1px solid var(--border-3)',
+          borderRadius: 12,
+          boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+          padding: 20,
+        }}
+      >
+        <div style={{ font: '600 12.5px var(--font-ui)', color: 'var(--text)', marginBottom: 10 }}>
+          {label}
+        </div>
+        <input
+          autoFocus
+          className="field mono"
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              onConfirm(val);
+            }
+            if (e.key === 'Escape') onCancel();
+          }}
+          style={{ padding: '6px 9px', fontSize: 12, width: '100%' }}
+        />
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <button
+            className="ghost-btn"
+            style={{ flex: 1, height: 36, justifyContent: 'center' }}
+            onClick={onCancel}
+          >
+            {t('common.cancel')}
+          </button>
+          <button
+            className="accent-btn"
+            style={{ flex: 1, height: 36, justifyContent: 'center' }}
+            onClick={() => onConfirm(val)}
+          >
+            {t('common.ok')}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

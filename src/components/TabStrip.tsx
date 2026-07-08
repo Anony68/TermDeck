@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStore, displayItems } from '../state/store';
 import { ContextMenu } from './ContextMenu';
 import { ClaudeIcon } from './ClaudeIcon';
+import { IconPin, IconPlus } from './icons';
 import { TAB_DND_MIME } from '../dnd';
 import { useT } from '../i18n';
 
@@ -100,8 +101,8 @@ export function TabStrip() {
               style={{ outline: dragOverId === t.id ? '1.5px dashed var(--accent)' : undefined }}
             >
               {t.pinned ? (
-                <span title={tt('tab.pinned')} style={{ fontSize: 10, lineHeight: 1 }}>
-                  📌
+                <span title={tt('tab.pinned')} style={{ display: 'inline-flex', flex: 'none' }}>
+                  <IconPin size={11} />
                 </span>
               ) : (
                 active && (
@@ -125,9 +126,9 @@ export function TabStrip() {
           title={tt('tab.new')}
           onClick={addTab}
           className="icon-btn"
-          style={{ padding: '6px 10px', font: '400 14px var(--font-ui)' }}
+          style={{ padding: '6px 10px' }}
         >
-          ＋
+          <IconPlus size={16} />
         </div>
       </div>
       {menu && (

@@ -298,6 +298,19 @@ input {
   animation: claude-attn 1.4s ease-in-out infinite;
 }
 
+/* Continuous rotation for the reconnecting spinner icon. */
+.icon-spin {
+  animation: icon-spin 0.9s linear infinite;
+}
+@keyframes icon-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Claude is actively working: the spark pulses. Idle = static icon. */
 .claude-pulse {
   animation: claude-pulse 1.1s ease-in-out infinite;
@@ -421,6 +434,8 @@ input {
 .fb-ico {
   font-size: 12px;
   flex: none;
+  display: inline-flex;
+  align-items: center;
 }
 .fb-transfer {
   padding: 4px 12px;

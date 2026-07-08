@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useStore, activeTabSelector, displayItems } from '../state/store';
-import { LAYOUTS, fitLayout } from '../layouts';
+import { LAYOUTS, resolveLayout } from '../layouts';
 import { writeSession } from '../ipc/session';
+import { ClaudeIcon } from './ClaudeIcon';
+import { IconSend } from './icons';
 import { useT } from '../i18n';
 
 function fmtTime(ms: number | null): string {
@@ -47,7 +49,9 @@ export function StatusBar() {
   const shown = items.map((it) => panes.find((p) => p.id === it.paneId)).filter(Boolean) as typeof panes;
   const cmdCount = items.length;
   const running = shown.filter((p) => (runtime[p.id]?.status ?? 'running') === 'running').length;
-  const label = LAYOUTS[fitLayout(items.length, tab.layout)].label;
+  const label = tab.layout === 'auto'
+    ? `Auto · ${LAYOUTS[resolveLayout(tab.layout, items.length)].label}`
+    : LAYOUTS[resolveLayout(tab.layout, items.length)].label;
 
   return (
     <>
@@ -69,11 +73,12 @@ export function StatusBar() {
       <span>{t('status.counts', { count: cmdCount, running })}</span>
       {claudeList.length > 0 && (
         <span
-          style={{ color: '#d97757', cursor: 'pointer' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#d97757', cursor: 'pointer' }}
           title={t('status.broadcastTip')}
           onClick={() => setBroadcast('')}
         >
-          ✳ {t('status.claudeAgg', { n: claudeList.length, ctx: fmtK(claudeCtx) })} ⤳
+          <ClaudeIcon size={11} /> {t('status.claudeAgg', { n: claudeList.length, ctx: fmtK(claudeCtx) })}
+          <IconSend size={11} />
         </span>
       )}
       <span style={{ flex: 1 }} />
@@ -99,8 +104,8 @@ export function StatusBar() {
             padding: 20,
           }}
         >
-          <div style={{ font: '600 14px var(--font-ui)', color: '#d97757', marginBottom: 12 }}>
-            ✳ {t('status.broadcastTitle')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, font: '600 14px var(--font-ui)', color: '#d97757', marginBottom: 12 }}>
+            <ClaudeIcon size={14} /> {t('status.broadcastTitle')}
           </div>
           <textarea
             autoFocus
