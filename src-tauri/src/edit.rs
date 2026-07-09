@@ -32,8 +32,20 @@ fn edit_root() -> PathBuf {
 
 /// Create the per-edit temp dir and return the full temp-file path (keeps the
 /// original filename so editors detect the file type).
+///
+/// `file_name` (and `edit_id`) come from the remote server / client and are
+/// joined onto a local path, so both must be rejected if they could escape
+/// the per-edit temp dir — e.g. a hostile server naming a file `..\..\x.bat`
+/// (a legal filename on Linux) would otherwise resolve outside `edit_root()`
+/// on a Windows client, and the later download would write there.
 #[tauri::command(rename_all = "camelCase")]
 pub fn edit_prepare(edit_id: String, file_name: String) -> Result<String, String> {
+    if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") || file_name.trim().is_empty() {
+        return Err("tên file không hợp lệ".to_string());
+    }
+    if edit_id.contains('/') || edit_id.contains('\\') || edit_id.contains("..") || edit_id.trim().is_empty() {
+        return Err("edit id không hợp lệ".to_string());
+    }
     let dir = edit_root().join(&edit_id);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join(&file_name).to_string_lossy().into_owned())
@@ -143,5 +155,10 @@ mod edit_tests {
         assert!(p.ends_with("notes.txt"));
         assert!(std::path::Path::new(&p).parent().unwrap().exists());
         let _ = std::fs::remove_dir_all(edit_root().join("test-prep-1"));
+    }
+
+    #[test]
+    fn prepare_rejects_path_traversal_filename() {
+        assert!(edit_prepare("t".into(), "..\\evil.bat".into()).is_err());
     }
 }
