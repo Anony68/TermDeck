@@ -78,6 +78,12 @@ export interface Tab {
   items: TabItem[];
 }
 
+/** An external editor the user registered for "Edit with…". */
+export interface EditorApp {
+  name: string;
+  path: string;
+}
+
 export interface Settings {
   restoreOnStartup: boolean;
   restoreCwd: boolean;
@@ -93,6 +99,10 @@ export interface Settings {
   githubRepo: string;
   /** UI language (defaults to Vietnamese). */
   language: Lang;
+  /** Exe used by "Edit" ('' = the OS default app for the extension). */
+  defaultEditor: string;
+  /** Editors offered in the "Edit with…" submenu. */
+  editors: EditorApp[];
 }
 
 export interface Snapshot {

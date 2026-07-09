@@ -39,6 +39,8 @@ const DEFAULT_SETTINGS: Settings = {
   uiScale: 1,
   githubRepo: '',
   language: 'en',
+  defaultEditor: '',
+  editors: [],
 };
 
 const STORE_VERSION = 4;

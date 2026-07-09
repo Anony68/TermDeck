@@ -366,6 +366,7 @@ const T = {
   'set.nav.session': { vi: 'Phiên & Khôi phục', en: 'Session & Restore' },
   'set.nav.layout': { vi: 'Bố cục mặc định', en: 'Default layout' },
   'set.nav.shells': { vi: 'Cấu hình shell', en: 'Shell configuration' },
+  'set.nav.editor': { vi: 'Trình soạn thảo', en: 'Editor' },
   'set.nav.keys': { vi: 'Phím tắt', en: 'Shortcuts' },
   'set.nav.update': { vi: 'Cập nhật', en: 'Updates' },
 
@@ -426,6 +427,22 @@ const T = {
   'set.shells.found': { vi: '● Đã tìm thấy', en: '● Found' },
   'set.shells.notFound': { vi: '○ Không tìm thấy', en: '○ Not found' },
   'set.shells.pathPlaceholder': { vi: 'Đường dẫn executable…', en: 'Executable path…' },
+
+  // ----- settings: editor -----
+  'set.editorDefault': { vi: 'Editor mặc định', en: 'Default editor' },
+  'set.editorDefaultHint': {
+    vi: 'Dùng cho nút "Sửa". Để trống = mở bằng ứng dụng Windows gắn với đuôi file.',
+    en: 'Used by "Edit". Leave empty to open with the OS-default app for the file type.',
+  },
+  'set.editorBrowse': { vi: 'Chọn…', en: 'Browse…' },
+  'set.editorClear': { vi: 'Xóa', en: 'Clear' },
+  'set.editorList': { vi: 'Danh sách "Sửa bằng…"', en: '"Edit with…" list' },
+  'set.editorListHint': {
+    vi: 'Các editor hiện trong menu chuột phải "Sửa bằng…".',
+    en: 'Editors shown in the right-click "Edit with…" submenu.',
+  },
+  'set.editorAdd': { vi: 'Thêm editor…', en: 'Add editor…' },
+  'set.editorEmpty': { vi: 'Chưa có editor nào.', en: 'No editors yet.' },
 
   // ----- settings: keys -----
   'set.keys.title': { vi: 'Phím tắt', en: 'Shortcuts' },

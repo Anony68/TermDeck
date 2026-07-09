@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../state/store';
-import { IS_MAC, SHELL_ORDER, SHELLS } from '../shells';
+import { IS_MAC, IS_WIN, SHELL_ORDER, SHELLS } from '../shells';
 import { LAYOUT_ORDER, LAYOUTS } from '../layouts';
 import { PresetIcon } from '../components/PresetIcon';
 import { IconClose, IconCheck } from '../components/icons';
@@ -13,12 +13,12 @@ import {
   getAppVersion,
   type UpdateResult,
 } from '../ipc/update';
-import { pickFolder } from '../ipc/api';
+import { pickFolder, pickFile } from '../ipc/api';
 import { exportBackup, importBackup } from '../ipc/backup';
 import { useT, type TKey } from '../i18n';
 import type { Lang, Settings } from '../types';
 
-type Section = 'general' | 'projects' | 'session' | 'layout' | 'shells' | 'keys' | 'update';
+type Section = 'general' | 'projects' | 'session' | 'layout' | 'shells' | 'editor' | 'keys' | 'update';
 
 const NAV: Array<{ id: Section; key: TKey }> = [
   { id: 'general', key: 'set.nav.general' },
@@ -26,6 +26,7 @@ const NAV: Array<{ id: Section; key: TKey }> = [
   { id: 'session', key: 'set.nav.session' },
   { id: 'layout', key: 'set.nav.layout' },
   { id: 'shells', key: 'set.nav.shells' },
+  { id: 'editor', key: 'set.nav.editor' },
   { id: 'keys', key: 'set.nav.keys' },
   { id: 'update', key: 'set.nav.update' },
 ];
@@ -123,6 +124,7 @@ export function SettingsWindow() {
             {section === 'projects' && <ProjectsSection />}
             {section === 'layout' && <LayoutSection />}
             {section === 'shells' && <ShellsSection />}
+            {section === 'editor' && <EditorSection />}
             {section === 'keys' && <KeysSection />}
             {section === 'update' && <UpdateSection />}
           </div>
@@ -570,6 +572,114 @@ function ShellsSection() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** Pick an executable with the OS file dialog; returns null when cancelled. */
+async function pickExe(): Promise<string | null> {
+  return pickFile(undefined, IS_WIN ? [{ name: 'Program', extensions: ['exe', 'cmd', 'bat'] }] : undefined);
+}
+
+/** Filename without extension — the display name for a picked editor exe. */
+export function editorNameOf(path: string): string {
+  const base = path.split(/[\\/]/).pop() ?? path;
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? base.slice(0, dot) : base;
+}
+
+function EditorSection() {
+  const settings = useStore((s) => s.settings);
+  const updateSettings = useStore((s) => s.updateSettings);
+  const t = useT();
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ font: '600 15px var(--font-ui)', color: 'var(--text)' }}>{t('set.editorDefault')}</div>
+      <div style={{ font: '400 12px var(--font-ui)', color: 'var(--text-2)' }}>
+        {t('set.editorDefaultHint')}
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          className="field mono"
+          value={settings.defaultEditor}
+          onChange={(e) => updateSettings({ defaultEditor: e.target.value })}
+          placeholder="C:\Program Files\Notepad++\notepad++.exe"
+          style={{ flex: 1 }}
+        />
+        <button
+          className="ghost-btn"
+          onClick={() => void pickExe().then((p) => p && updateSettings({ defaultEditor: p }))}
+        >
+          {t('set.editorBrowse')}
+        </button>
+        {settings.defaultEditor && (
+          <button className="ghost-btn" onClick={() => updateSettings({ defaultEditor: '' })}>
+            {t('set.editorClear')}
+          </button>
+        )}
+      </div>
+
+      <div style={{ font: '600 15px var(--font-ui)', color: 'var(--text)' }}>{t('set.editorList')}</div>
+      <div style={{ font: '400 12px var(--font-ui)', color: 'var(--text-2)' }}>
+        {t('set.editorListHint')}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {settings.editors.length === 0 && (
+          <div style={{ font: '400 11.5px var(--font-ui)', color: 'var(--text-faint)' }}>
+            {t('set.editorEmpty')}
+          </div>
+        )}
+        {settings.editors.map((ed, i) => (
+          <div
+            key={`${ed.path}-${i}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border-2)',
+              borderRadius: 10,
+              padding: '12px 14px',
+            }}
+          >
+            <span style={{ font: '600 12.5px var(--font-ui)', color: 'var(--text)', flex: 1 }}>{ed.name}</span>
+            <span
+              className="mono"
+              style={{
+                font: '400 11px var(--font-mono)',
+                color: 'var(--text-muted)',
+                maxWidth: 320,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={ed.path}
+            >
+              {ed.path}
+            </span>
+            <button
+              className="ghost-btn"
+              onClick={() => updateSettings({ editors: settings.editors.filter((_, j) => j !== i) })}
+            >
+              <IconClose size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        className="ghost-btn"
+        style={{ alignSelf: 'flex-start' }}
+        onClick={() =>
+          void pickExe().then((p) => {
+            if (!p) return;
+            const editors = useStore.getState().settings.editors;
+            if (editors.some((e) => e.path === p)) return;
+            updateSettings({ editors: [...editors, { name: editorNameOf(p), path: p }] });
+          })
+        }
+      >
+        {t('set.editorAdd')}
+      </button>
     </div>
   );
 }
