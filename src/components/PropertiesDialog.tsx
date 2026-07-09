@@ -171,7 +171,7 @@ export function PropertiesDialog({
           <button className="ghost-btn" style={{ flex: 1, height: 36, justifyContent: 'center' }} onClick={onClose}>
             {t('common.cancel')}
           </button>
-          {backend.chmod && (
+          {backend.chmod && st && (
             <button className="accent-btn" style={{ flex: 1, height: 36, justifyContent: 'center' }} disabled={applying} onClick={() => void applyMode()}>
               {t('prop.apply')}
             </button>
