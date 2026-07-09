@@ -111,6 +111,9 @@ export function FileBrowser({ pane }: { pane: Pane }) {
   const cancelRef = useRef(false);
   // While true the batch holds between files (pause/resume).
   const pausedRef = useRef(false);
+  // Guards doPaste against overlapping invocations (the pure-rename fast path
+  // never sets `busy`, so a fast double Ctrl+V could otherwise race).
+  const pasteRef = useRef(false);
   const [paused, setPaused] = useState(false);
   // OS drag-and-drop (C3): upload files dropped from Explorer onto the pane.
   const rootRef = useRef<HTMLDivElement>(null);
@@ -315,86 +318,98 @@ export function FileBrowser({ pane }: { pane: Pane }) {
     side === 'right' && hasRemote ? 'remote' : 'local';
 
   const doPaste = async (dstSide: ClipSide, dstDir: string) => {
-    if (!clip || busy) return;
-    const srcKind = kindOf(clip.side);
-    const dstKind = kindOf(dstSide);
-    const sameKind = srcKind === dstKind;
-    const dstSep = dstKind === 'local' ? LOCAL_SEP : '/';
+    if (!clip || busy || pasteRef.current) return;
+    pasteRef.current = true;
+    try {
+      const srcKind = kindOf(clip.side);
+      const dstKind = kindOf(dstSide);
+      const sameKind = srcKind === dstKind;
+      const dstSep = dstKind === 'local' ? LOCAL_SEP : '/';
 
-    // Cut into the source dir itself = no-op; a folder into its own subtree = error.
-    if (clip.op === 'cut' && clip.side === dstSide && clip.base === dstDir) {
-      setClip(null);
-      return;
-    }
-    if (sameKind) {
-      for (const en of clip.entries) {
-        if (!en.isDir) continue;
-        const src = joinPath(clip.base, en.name, clip.sep);
-        if (dstDir === src || dstDir.startsWith(src + clip.sep)) {
-          alert(t('fb.errPasteSub'));
-          return;
+      // Same physical directory (regardless of which panel it's viewed in): pasting
+      // would make src === dst per entry — on SFTP the create() truncates the file
+      // being read, destroying it. No-op instead; a cut just clears the clipboard.
+      const normPath = (p: string, kind: 'local' | 'remote') => {
+        let s = p.replace(/[\\/]+$/, '');
+        if (kind === 'local') s = s.toLowerCase().replace(/\//g, '\\');
+        return s;
+      };
+      if (sameKind && normPath(clip.base, srcKind) === normPath(dstDir, dstKind)) {
+        if (clip.op === 'cut') setClip(null);
+        return;
+      }
+      if (sameKind) {
+        for (const en of clip.entries) {
+          if (!en.isDir) continue;
+          const src = joinPath(clip.base, en.name, clip.sep);
+          if (dstDir === src || dstDir.startsWith(src + clip.sep)) {
+            alert(t('fb.errPasteSub'));
+            return;
+          }
         }
       }
-    }
 
-    const ops: TransferOps = sameKind
-      ? srcKind === 'local'
-        ? localCopyOps
-        : remoteCopyOps
-      : srcKind === 'local'
-        ? uploadOps
-        : downloadOps;
-    const srcBackend = srcKind === 'local' ? localBackend : remoteBackend;
+      const ops: TransferOps = sameKind
+        ? srcKind === 'local'
+          ? localCopyOps
+          : remoteCopyOps
+        : srcKind === 'local'
+          ? uploadOps
+          : downloadOps;
+      const srcBackend = srcKind === 'local' ? localBackend : remoteBackend;
 
-    if (clip.op === 'cut' && sameKind) {
-      // Fast path: same-backend move = rename. Fall back to copy+delete per entry
-      // (name conflict at the target, or EXDEV across drives).
-      const viaCopy: FileEntry[] = [];
-      const dstNames = new Set(
-        (await ops.dstList(dstDir).catch(() => [] as FileEntry[])).map((x) => x.name)
-      );
-      for (const en of clip.entries) {
-        if (dstNames.has(en.name)) {
-          viaCopy.push(en);
-          continue;
+      if (clip.op === 'cut' && sameKind) {
+        // Fast path: same-backend move = rename. Fall back to copy+delete per entry
+        // (name conflict at the target, or EXDEV across drives).
+        const viaCopy: FileEntry[] = [];
+        const dstNames = new Set(
+          (await ops.dstList(dstDir).catch(() => [] as FileEntry[])).map((x) => x.name)
+        );
+        for (const en of clip.entries) {
+          if (dstNames.has(en.name)) {
+            viaCopy.push(en);
+            continue;
+          }
+          try {
+            await srcBackend.rename(joinPath(clip.base, en.name, clip.sep), joinPath(dstDir, en.name, dstSep));
+          } catch {
+            viaCopy.push(en);
+          }
         }
-        try {
-          await srcBackend.rename(joinPath(clip.base, en.name, clip.sep), joinPath(dstDir, en.name, dstSep));
-        } catch {
-          viaCopy.push(en);
+        if (viaCopy.length) {
+          const res = await runBatch(viaCopy, clip.base, dstDir, ops, t('fb.verbMove'));
+          // Delete sources ONLY on a fully clean batch (no fail/skip/cancel) — never lose data.
+          if (res && !res.cancelled && res.failed === 0 && res.skipped === 0) {
+            for (const en of viaCopy) {
+              try {
+                await srcBackend.remove(joinPath(clip.base, en.name, clip.sep), en.isDir);
+              } catch {
+                /* leave the source in place */
+              }
+            }
+          }
         }
-      }
-      if (viaCopy.length) {
-        const res = await runBatch(viaCopy, clip.base, dstDir, ops, t('fb.verbMove'));
-        // Delete sources ONLY on a fully clean batch (no fail/skip/cancel) — never lose data.
-        if (res && !res.cancelled && res.failed === 0 && res.skipped === 0) {
-          for (const en of viaCopy) {
+        setLeftKey((k) => k + 1);
+        setRightKey((k) => k + 1);
+      } else {
+        const verb = clip.op === 'cut' ? t('fb.verbMove') : t('fb.verbCopy');
+        const res = await runBatch(clip.entries, clip.base, dstDir, ops, verb);
+        if (clip.op === 'cut' && res && !res.cancelled && res.failed === 0 && res.skipped === 0) {
+          for (const en of clip.entries) {
             try {
               await srcBackend.remove(joinPath(clip.base, en.name, clip.sep), en.isDir);
             } catch {
               /* leave the source in place */
             }
           }
+          setLeftKey((k) => k + 1);
+          setRightKey((k) => k + 1);
         }
       }
-      setLeftKey((k) => k + 1);
-      setRightKey((k) => k + 1);
-    } else {
-      const verb = clip.op === 'cut' ? t('fb.verbMove') : t('fb.verbCopy');
-      const res = await runBatch(clip.entries, clip.base, dstDir, ops, verb);
-      if (clip.op === 'cut' && res && !res.cancelled && res.failed === 0 && res.skipped === 0) {
-        for (const en of clip.entries) {
-          try {
-            await srcBackend.remove(joinPath(clip.base, en.name, clip.sep), en.isDir);
-          } catch {
-            /* leave the source in place */
-          }
-        }
-        setLeftKey((k) => k + 1);
-        setRightKey((k) => k + 1);
-      }
+      setClip(null);
+    } finally {
+      pasteRef.current = false;
     }
-    setClip(null);
   };
 
   // Upload files dropped from the OS file explorer onto this pane (grouped by
