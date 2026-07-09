@@ -940,6 +940,118 @@ pub fn fs_home() -> String {
         .unwrap_or_default()
 }
 
+/// Full metadata for the Properties dialog. Shared by fs_stat and sftp_stat;
+/// fields the platform can't provide are 0/false/"".
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatInfo {
+    pub size: u64,
+    pub is_dir: bool,
+    pub modified: u64,
+    pub created: u64,
+    pub accessed: u64,
+    pub readonly: bool,
+    pub hidden: bool,
+    /// Unix permission bits (remote only; 0 local).
+    pub mode: u32,
+    pub uid: u32,
+    pub gid: u32,
+    pub is_symlink: bool,
+    pub link_target: String,
+}
+
+#[tauri::command]
+pub fn fs_stat(path: String) -> Result<StatInfo, String> {
+    let p = Path::new(&path);
+    let sym = std::fs::symlink_metadata(p).map_err(|e| e.to_string())?;
+    let is_symlink = sym.file_type().is_symlink();
+    let meta = std::fs::metadata(p).unwrap_or_else(|_| sym.clone());
+    let secs = |t: std::io::Result<std::time::SystemTime>| {
+        t.ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    };
+    let link_target = if is_symlink {
+        std::fs::read_link(p).map(|t| t.to_string_lossy().into_owned()).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    #[cfg(windows)]
+    let hidden = {
+        use std::os::windows::fs::MetadataExt;
+        meta.file_attributes() & 0x2 != 0 // FILE_ATTRIBUTE_HIDDEN
+    };
+    #[cfg(not(windows))]
+    let hidden = p
+        .file_name()
+        .map(|n| n.to_string_lossy().starts_with('.'))
+        .unwrap_or(false);
+    Ok(StatInfo {
+        size: meta.len(),
+        is_dir: meta.is_dir(),
+        modified: secs(meta.modified()),
+        created: secs(meta.created()),
+        accessed: secs(meta.accessed()),
+        readonly: meta.permissions().readonly(),
+        hidden,
+        mode: 0,
+        uid: 0,
+        gid: 0,
+        is_symlink,
+        link_target,
+    })
+}
+
+/// Create a new empty file; errors if it already exists (never truncates).
+#[tauri::command]
+pub fn fs_touch(path: String) -> Result<(), String> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map(|_| ())
+        .map_err(|e| format!("tạo file lỗi: {e}"))
+}
+
+/// Copy ONE file (recursion is handled by the frontend transfer engine).
+#[tauri::command]
+pub fn fs_copy(from: String, to: String) -> Result<(), String> {
+    std::fs::copy(&from, &to).map(|_| ()).map_err(|e| format!("chép file lỗi: {e}"))
+}
+
+fn dir_size_sync(path: &str) -> u64 {
+    let mut total = 0u64;
+    let mut stack = vec![std::path::PathBuf::from(path)];
+    let mut visited = 0u32;
+    while let Some(dir) = stack.pop() {
+        if visited >= 50_000 {
+            break; // bound runaway trees
+        }
+        visited += 1;
+        let rd = match std::fs::read_dir(&dir) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        for ent in rd.flatten() {
+            let Ok(meta) = ent.metadata() else { continue };
+            if meta.is_dir() {
+                stack.push(ent.path());
+            } else {
+                total += meta.len();
+            }
+        }
+    }
+    total
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn fs_dir_size(path: String) -> Result<u64, String> {
+    tauri::async_runtime::spawn_blocking(move || Ok(dir_size_sync(&path)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 // ---------- ~/.ssh/config import (B3) ----------
 
 #[derive(Clone, Serialize, Default)]
@@ -1124,4 +1236,55 @@ pub fn parse_tlp(path: String) -> Result<TlpProfile, String> {
         return Err("no SSH host found in profile".into());
     }
     Ok(prof)
+}
+
+#[cfg(test)]
+mod fs_tests {
+    use super::*;
+
+    fn tmp(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("termdeck-test-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn touch_creates_and_refuses_overwrite() {
+        let d = tmp("touch");
+        let f = d.join("a.txt").to_string_lossy().into_owned();
+        fs_touch(f.clone()).unwrap();
+        assert!(std::path::Path::new(&f).exists());
+        assert!(fs_touch(f).is_err(), "existing file must not be truncated");
+    }
+
+    #[test]
+    fn copy_copies_bytes() {
+        let d = tmp("copy");
+        let a = d.join("a.bin");
+        std::fs::write(&a, b"hello").unwrap();
+        let b = d.join("b.bin");
+        fs_copy(a.to_string_lossy().into_owned(), b.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(std::fs::read(&b).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn dir_size_sums_recursively() {
+        let d = tmp("size");
+        std::fs::create_dir_all(d.join("sub")).unwrap();
+        std::fs::write(d.join("a"), vec![0u8; 10]).unwrap();
+        std::fs::write(d.join("sub/b"), vec![0u8; 32]).unwrap();
+        assert_eq!(dir_size_sync(&d.to_string_lossy()), 42);
+    }
+
+    #[test]
+    fn stat_reports_file() {
+        let d = tmp("stat");
+        let f = d.join("x.txt");
+        std::fs::write(&f, b"12345").unwrap();
+        let st = fs_stat(f.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(st.size, 5);
+        assert!(!st.is_dir);
+        assert!(st.modified > 0);
+    }
 }

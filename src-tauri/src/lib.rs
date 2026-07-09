@@ -247,6 +247,10 @@ pub fn run() {
             ssh::fs_rename,
             ssh::fs_remove,
             ssh::fs_home,
+            ssh::fs_stat,
+            ssh::fs_touch,
+            ssh::fs_copy,
+            ssh::fs_dir_size,
             ssh::ssh_config_hosts
         ])
         .run(tauri::generate_context!())

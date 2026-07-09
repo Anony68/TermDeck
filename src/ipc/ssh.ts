@@ -191,6 +191,35 @@ export async function fsHome(): Promise<string> {
   return await invoke('fs_home');
 }
 
+/** Full metadata for the Properties dialog (fields a side can't provide are 0/false/''). */
+export interface StatInfo {
+  size: number;
+  isDir: boolean;
+  modified: number;
+  created: number;
+  accessed: number;
+  readonly: boolean;
+  hidden: boolean;
+  mode: number;
+  uid: number;
+  gid: number;
+  isSymlink: boolean;
+  linkTarget: string;
+}
+
+export async function fsStat(path: string): Promise<StatInfo> {
+  return await invoke('fs_stat', { path });
+}
+export async function fsTouch(path: string): Promise<void> {
+  await invoke('fs_touch', { path });
+}
+export async function fsCopy(from: string, to: string): Promise<void> {
+  await invoke('fs_copy', { from, to });
+}
+export async function fsDirSize(path: string): Promise<number> {
+  return await invoke('fs_dir_size', { path });
+}
+
 export async function onSftpProgress(
   cb: (p: TransferProgress) => void
 ): Promise<() => void> {
