@@ -19,6 +19,7 @@ import { LAYOUTS, resolveLayout } from '../layouts';
 import { loadPersisted, savePersisted } from '../ipc/persist';
 import { killSession } from '../ipc/session';
 import { secretCopy, secretDelete } from '../ipc/ssh';
+import { stopEditsForPane } from './edits';
 import { isPaneActive } from './activity';
 import { IS_WIN, SHELL_ORDER } from '../shells';
 import { translate } from '../i18n';
@@ -629,6 +630,7 @@ export const useStore = create<AppState>((set, get) => {
     removePane: (paneId) => {
       killSession(paneId);
       secretDelete(paneId);
+      stopEditsForPane(paneId);
       const { panes, tabs, runtime, focusedPaneId } = get();
       const rt = { ...runtime };
       delete rt[paneId];

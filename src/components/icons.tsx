@@ -37,4 +37,5 @@ export {
   Minus as IconMinimize,
   ArrowRight as IconArrowRight,
   ArrowLeft as IconArrowLeft,
+  Pencil as IconPencil,
 } from 'lucide-react';

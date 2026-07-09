@@ -15,6 +15,7 @@ import { SettingsWindow } from './settings/SettingsWindow';
 import { useT } from './i18n';
 import { claudeSession, type ClaudeSession } from './ipc/claude';
 import { onSshStatus } from './ipc/ssh';
+import { wireEditUploads } from './state/edits';
 
 export default function App() {
   const hydrated = useStore((s) => s.hydrated);
@@ -54,6 +55,12 @@ export default function App() {
       useStore.getState().setSshStatus(s.paneId, s.state, s.attempt)
     ).then((fn) => unlisteners.push(fn));
     return () => unlisteners.forEach((fn) => fn());
+  }, []);
+
+  // Edit-in-place auto-upload pump: wired once here (not in FileBrowser, which
+  // unmounts on tab switches while edits keep running in the background).
+  useEffect(() => {
+    wireEditUploads();
   }, []);
 
   // Poll Claude Code's real session state for panes that are running Claude.

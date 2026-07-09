@@ -21,7 +21,8 @@ import {
   onSftpProgress,
 } from '../ipc/ssh';
 import { FilePanel, type FsBackend } from './FilePanel';
-import { IconSwap, IconPlay, IconPause, IconClose, IconCheck } from './icons';
+import { IconSwap, IconPlay, IconPause, IconClose, IconCheck, IconPencil } from './icons';
+import { useEdits, uploadNow, redownload, stopEdit } from '../state/edits';
 import {
   runTransfer,
   type ConflictAction,
@@ -79,6 +80,10 @@ export function FileBrowser({ pane }: { pane: Pane }) {
   const [remoteStart, setRemoteStart] = useState<string | null>(null);
   const [leftKey, setLeftKey] = useState(0);
   const [rightKey, setRightKey] = useState(0);
+  const edits = useEdits((s) => s.edits);
+  const myEdits = Object.values(edits).filter((e) => e.paneId === pane.id);
+  const editErr = myEdits.some((e) => e.error);
+  const [editsOpen, setEditsOpen] = useState(false);
 
   // Live current-dir of each side, so a transfer knows the opposite destination.
   const localCwd = useRef(pane.browserLocalPath ?? '');
@@ -555,6 +560,22 @@ export function FileBrowser({ pane }: { pane: Pane }) {
           color: 'var(--text-muted)',
         }}
       >
+        {myEdits.length > 0 && (
+          <button
+            className="fb-sync-btn"
+            style={{
+              flex: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              ...(editErr ? { borderColor: 'var(--danger)', color: 'var(--danger)' } : {}),
+            }}
+            onClick={() => setEditsOpen((v) => !v)}
+          >
+            <IconPencil size={12} />
+            {t('fb.editingN', { n: myEdits.length })}
+          </button>
+        )}
         {hasRemote && conn === 'ready' && !busy && !planning && (
           <button
             className="fb-sync-btn"
@@ -670,6 +691,60 @@ export function FileBrowser({ pane }: { pane: Pane }) {
           onCancel={() => setBiPlan(null)}
           onConfirm={() => void runBiSyncNow()}
         />
+      )}
+
+      {editsOpen && (
+        <div
+          onMouseDown={() => setEditsOpen(false)}
+          style={{ position: 'absolute', inset: 0, zIndex: 46 }}
+        >
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              position: 'absolute',
+              left: 10,
+              bottom: 32,
+              width: 380,
+              maxHeight: 260,
+              overflow: 'auto',
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border-3)',
+              borderRadius: 10,
+              boxShadow: '0 16px 40px rgba(0,0,0,0.55)',
+              padding: 8,
+            }}
+          >
+            {myEdits.map((ed) => (
+              <div key={ed.editId} style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ font: '600 11.5px var(--font-ui)', color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ed.remotePath}>
+                    {ed.name}
+                  </span>
+                  <span style={{ font: '400 10px var(--font-mono)', color: ed.error ? 'var(--danger)' : 'var(--text-muted)' }}>
+                    {ed.uploading
+                      ? t('fb.editUploading')
+                      : ed.error
+                        ? ed.error
+                        : ed.lastUpload
+                          ? t('fb.editUploaded', { time: new Date(ed.lastUpload).toLocaleTimeString() })
+                          : t('fb.editNever')}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                  <button className="ghost-btn" style={{ fontSize: 10.5 }} onClick={() => void uploadNow(ed.editId)}>
+                    {t('fb.editReupload')}
+                  </button>
+                  <button className="ghost-btn" style={{ fontSize: 10.5 }} onClick={() => void redownload(ed.editId)}>
+                    {t('fb.editRedownload')}
+                  </button>
+                  <button className="ghost-btn" style={{ fontSize: 10.5, color: 'var(--danger)' }} onClick={() => stopEdit(ed.editId)}>
+                    {t('fb.editStop')}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

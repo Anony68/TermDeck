@@ -328,6 +328,13 @@ const T = {
   'fb.resumeBtn': { vi: 'Tiếp tục', en: 'Resume' },
   'fb.paused': { vi: 'Đã tạm dừng', en: 'Paused' },
   'fb.skipDirsWarn': { vi: 'Bỏ qua {n} thư mục — bản này chỉ truyền tệp (thư mục hỗ trợ sau).', en: 'Skipped {n} folders — this build transfers files only (folders coming later).' },
+  'fb.editingN': { vi: 'Đang sửa {n}', en: 'Editing {n}' },
+  'fb.editUploaded': { vi: 'đã upload {time}', en: 'uploaded {time}' },
+  'fb.editNever': { vi: 'chưa upload', en: 'not uploaded yet' },
+  'fb.editUploading': { vi: 'đang upload…', en: 'uploading…' },
+  'fb.editReupload': { vi: 'Upload lại', en: 'Re-upload' },
+  'fb.editRedownload': { vi: 'Tải lại về', en: 'Re-download' },
+  'fb.editStop': { vi: 'Dừng theo dõi', en: 'Stop watching' },
 
   // ----- overwrite conflict dialog -----
   'conflict.title': { vi: 'Tệp đã tồn tại', en: 'File already exists' },
