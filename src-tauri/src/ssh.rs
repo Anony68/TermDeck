@@ -8,8 +8,9 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use base64::Engine;
@@ -967,6 +968,26 @@ pub fn sftp_copy(
     Ok(())
 }
 
+/// Per-pane cancel flags for in-flight `sftp_dir_size` calls. Closing the
+/// Properties dialog abandons the frontend promise, but the blocking task
+/// would otherwise keep holding the pane's SFTP conn mutex — up to 8000
+/// serial readdirs on a slow link — starving listings/uploads on that pane.
+/// `sftp_dir_size_cancel` flips the flag so the loop exits promptly.
+fn dir_size_cancels() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    static M: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+    M.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Cancel any in-flight `sftp_dir_size` for `pane_id`. Safe no-op if none is
+/// running. The call still returns its (partial) total — harmless, since the
+/// dialog that requested it is already closed.
+#[tauri::command(rename_all = "camelCase")]
+pub fn sftp_dir_size_cancel(pane_id: String) {
+    if let Some(f) = dir_size_cancels().lock().unwrap().get(&pane_id) {
+        f.store(true, Ordering::Relaxed);
+    }
+}
+
 /// Recursive size of a remote subtree (bounded like sftp_search).
 #[tauri::command(rename_all = "camelCase")]
 pub async fn sftp_dir_size(
@@ -975,12 +996,20 @@ pub async fn sftp_dir_size(
     path: String,
 ) -> Result<u64, String> {
     let conn = get_sftp(&state, &pane_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let cancel = Arc::new(AtomicBool::new(false));
+    // Replace any previous flag for this pane (e.g. a stale one from a call
+    // that already finished) with a fresh one for this call.
+    dir_size_cancels().lock().unwrap().insert(pane_id.clone(), cancel.clone());
+    let cancel_flag = cancel.clone();
+    let joined = tauri::async_runtime::spawn_blocking(move || {
         let conn = conn.lock().unwrap();
         let mut total = 0u64;
         let mut stack = vec![path];
         let mut visited = 0u32;
         while let Some(dir) = stack.pop() {
+            if cancel_flag.load(Ordering::Relaxed) {
+                break;
+            }
             if visited >= 8000 {
                 break;
             }
@@ -998,10 +1027,13 @@ pub async fn sftp_dir_size(
                 }
             }
         }
+        // Cancelled result is still Ok: the dialog is closed anyway and a
+        // partial total is harmless (never surfaced).
         Ok(total)
     })
-    .await
-    .map_err(|e| e.to_string())?
+    .await;
+    dir_size_cancels().lock().unwrap().remove(&pane_id);
+    joined.map_err(|e| e.to_string())?
 }
 
 // ---------- local filesystem (for the Browser pane) ----------

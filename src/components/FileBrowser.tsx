@@ -25,6 +25,7 @@ import {
   sftpTouch,
   sftpStat,
   sftpDirSize,
+  sftpDirSizeCancel,
   sftpCopy,
   onSftpProgress,
 } from '../ipc/ssh';
@@ -197,6 +198,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
       touch: (p) => sftpTouch(pane.id, p),
       stat: (p) => sftpStat(pane.id, p),
       dirSize: (p) => sftpDirSize(pane.id, p),
+      dirSizeCancel: () => sftpDirSizeCancel(pane.id),
       sep: '/',
     }),
     [pane.id]

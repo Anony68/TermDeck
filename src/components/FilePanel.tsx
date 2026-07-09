@@ -35,6 +35,8 @@ export interface FsBackend {
   stat?: (path: string) => Promise<StatInfo>;
   /** Recursive size of a directory (bounded). */
   dirSize?: (path: string) => Promise<number>;
+  /** Cancel an in-flight dirSize for this pane (remote only; absent for local — a local walk holds no shared lock). */
+  dirSizeCancel?: () => void;
   /** Path separator + join, so local (\\) and remote (/) behave correctly. */
   sep: string;
 }

@@ -185,6 +185,11 @@ export async function sftpCopy(paneId: string, from: string, to: string): Promis
 export async function sftpDirSize(paneId: string, path: string): Promise<number> {
   return await invoke('sftp_dir_size', { paneId, path });
 }
+/** Cancel an in-flight sftp_dir_size for this pane (e.g. Properties dialog closed). */
+export function sftpDirSizeCancel(paneId: string): void {
+  if (!IS_TAURI) return;
+  void invoke('sftp_dir_size_cancel', { paneId });
+}
 
 export async function fsList(path: string): Promise<FileEntry[]> {
   return await invoke('fs_list', { path });

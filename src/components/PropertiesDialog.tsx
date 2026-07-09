@@ -53,6 +53,15 @@ export function PropertiesDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [full]);
 
+  // If the dialog is closed while a dir-size calc is in flight, the awaited
+  // promise below is simply abandoned — but the backend task would otherwise
+  // keep running (holding the pane's SFTP conn mutex for remote panes).
+  // Cancelling on unmount is a safe no-op when nothing is running.
+  useEffect(() => {
+    return () => backend.dirSizeCancel?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const calc = async () => {
     if (!backend.dirSize) return;
     setCalcing(true);

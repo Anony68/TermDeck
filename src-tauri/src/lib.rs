@@ -249,6 +249,7 @@ pub fn run() {
             ssh::sftp_touch,
             ssh::sftp_copy,
             ssh::sftp_dir_size,
+            ssh::sftp_dir_size_cancel,
             ssh::fs_list,
             ssh::fs_mkdir,
             ssh::fs_rename,
