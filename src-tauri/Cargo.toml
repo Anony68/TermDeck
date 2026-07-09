@@ -30,6 +30,7 @@ tauri-plugin-clipboard-manager = "2"
 ureq = "3.3.0"
 base64 = "0.22"
 keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
+notify = "6"
 
 # ssh2 uses WinCNG on Windows (no OpenSSL); elsewhere build a vendored OpenSSL.
 [target.'cfg(windows)'.dependencies]

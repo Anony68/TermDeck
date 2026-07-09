@@ -1,5 +1,6 @@
 mod claude;
 mod cursor;
+mod edit;
 mod pty;
 mod shells;
 mod ssh;
@@ -204,9 +205,11 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(PtyManager::new())
         .manage(SshManager::new())
+        .manage(edit::EditManager::new())
         .setup(|app| {
             let pids = app.state::<PtyManager>().pids();
             start_stats(app.handle().clone(), pids);
+            edit::sweep_stale();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -255,7 +258,11 @@ pub fn run() {
             ssh::fs_touch,
             ssh::fs_copy,
             ssh::fs_dir_size,
-            ssh::ssh_config_hosts
+            ssh::ssh_config_hosts,
+            edit::edit_prepare,
+            edit::edit_open,
+            edit::edit_watch,
+            edit::edit_unwatch
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
