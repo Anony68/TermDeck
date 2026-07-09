@@ -9,6 +9,8 @@ import {
   fsRemove,
   fsHome,
   fsTouch,
+  fsStat,
+  fsDirSize,
   fsCopy,
   sftpConnect,
   sftpHome,
@@ -21,6 +23,8 @@ import {
   sftpUpload,
   sftpDownload,
   sftpTouch,
+  sftpStat,
+  sftpDirSize,
   sftpCopy,
   onSftpProgress,
 } from '../ipc/ssh';
@@ -168,7 +172,17 @@ export function FileBrowser({ pane }: { pane: Pane }) {
   // Stable across re-renders (Pane re-renders every second for stats/uptime);
   // otherwise FilePanel's load effect would re-fire and reset path + selection.
   const localBackend = useMemo<FsBackend>(
-    () => ({ list: fsList, mkdir: fsMkdir, rename: fsRename, remove: fsRemove, home: fsHome, touch: fsTouch, sep: LOCAL_SEP }),
+    () => ({
+      list: fsList,
+      mkdir: fsMkdir,
+      rename: fsRename,
+      remove: fsRemove,
+      home: fsHome,
+      touch: fsTouch,
+      stat: fsStat,
+      dirSize: fsDirSize,
+      sep: LOCAL_SEP,
+    }),
     []
   );
   const remoteBackend = useMemo<FsBackend>(
@@ -181,6 +195,8 @@ export function FileBrowser({ pane }: { pane: Pane }) {
       search: (root, q) => sftpSearch(pane.id, root, q),
       home: () => sftpHome(pane.id, ''),
       touch: (p) => sftpTouch(pane.id, p),
+      stat: (p) => sftpStat(pane.id, p),
+      dirSize: (p) => sftpDirSize(pane.id, p),
       sep: '/',
     }),
     [pane.id]

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { FileEntry } from '../ipc/ssh';
+import type { FileEntry, StatInfo } from '../ipc/ssh';
 import { ContextMenu, type MenuItem } from './ContextMenu';
+import { PropertiesDialog } from './PropertiesDialog';
 import { joinPath } from './pathUtils';
 import { useStore } from '../state/store';
 import { copyText } from '../ipc/clipboard';
@@ -30,6 +31,10 @@ export interface FsBackend {
   home?: () => Promise<string>;
   /** Create a new empty file (errors if the name exists). */
   touch: (path: string) => Promise<void>;
+  /** Full metadata for the Properties dialog. */
+  stat?: (path: string) => Promise<StatInfo>;
+  /** Recursive size of a directory (bounded). */
+  dirSize?: (path: string) => Promise<number>;
   /** Path separator + join, so local (\\) and remote (/) behave correctly. */
   sep: string;
 }
@@ -126,6 +131,7 @@ export function FilePanel({
   // In-panel text prompt (WKWebView's window.prompt returns null, so mkdir/chmod
   // need their own input). Holds the label, current draft and the submit action.
   const [ask, setAsk] = useState<{ label: string; draft: string; onOk: (v: string) => void } | null>(null);
+  const [propsFor, setPropsFor] = useState<FileEntry | null>(null);
   const [marquee, setMarquee] = useState<{ top: number; height: number } | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -549,7 +555,7 @@ export function FilePanel({
       ...(backend.chmod
         ? [{ label: t('fb.chmod'), disabled: !target, onClick: () => target && doChmod(target) }]
         : []),
-      // Properties item inserted in Task 9
+      { label: t('fb.properties'), disabled: !target, onClick: () => target && (setMenu(null), setPropsFor(target)) },
       { label: '', separator: true },
       {
         label: t('fb.selectAll'),
@@ -889,6 +895,16 @@ export function FilePanel({
             setAsk(null);
             ask.onOk(v);
           }}
+        />
+      )}
+
+      {propsFor && (
+        <PropertiesDialog
+          entry={propsFor}
+          dir={path}
+          backend={backend}
+          onClose={() => setPropsFor(null)}
+          onChanged={() => void load(path)}
         />
       )}
     </div>
