@@ -1032,7 +1032,16 @@ pub async fn sftp_dir_size(
         Ok(total)
     })
     .await;
-    dir_size_cancels().lock().unwrap().remove(&pane_id);
+    // Only remove our own flag — a newer calculation on this pane may have
+    // replaced it, and deleting that one would make it uncancellable.
+    {
+        let mut map = dir_size_cancels().lock().unwrap();
+        if let std::collections::hash_map::Entry::Occupied(e) = map.entry(pane_id.clone()) {
+            if Arc::ptr_eq(e.get(), &cancel) {
+                e.remove();
+            }
+        }
+    }
     joined.map_err(|e| e.to_string())?
 }
 
