@@ -173,6 +173,18 @@ export async function sftpUpload(paneId: string, local: string, remote: string):
 export async function sftpDownload(paneId: string, remote: string, local: string): Promise<void> {
   await invoke('sftp_download', { paneId, remote, local });
 }
+export async function sftpStat(paneId: string, path: string): Promise<StatInfo> {
+  return await invoke('sftp_stat', { paneId, path });
+}
+export async function sftpTouch(paneId: string, path: string): Promise<void> {
+  await invoke('sftp_touch', { paneId, path });
+}
+export async function sftpCopy(paneId: string, from: string, to: string): Promise<void> {
+  await invoke('sftp_copy', { paneId, from, to });
+}
+export async function sftpDirSize(paneId: string, path: string): Promise<number> {
+  return await invoke('sftp_dir_size', { paneId, path });
+}
 
 export async function fsList(path: string): Promise<FileEntry[]> {
   return await invoke('fs_list', { path });

@@ -863,6 +863,147 @@ pub fn sftp_download(
     Ok(())
 }
 
+#[tauri::command(rename_all = "camelCase")]
+pub fn sftp_stat(
+    state: tauri::State<SshManager>,
+    pane_id: String,
+    path: String,
+) -> Result<StatInfo, String> {
+    let conn = get_sftp(&state, &pane_id)?;
+    let conn = conn.lock().unwrap();
+    let p = Path::new(&path);
+    let lst = conn.sftp.lstat(p).map_err(|e| format!("đọc thuộc tính lỗi: {e}"))?;
+    let is_symlink = lst.perm.unwrap_or(0) & 0o170000 == 0o120000;
+    // For symlinks report the target's size/kind, but keep the link flag.
+    let st = if is_symlink { conn.sftp.stat(p).unwrap_or(lst.clone()) } else { lst.clone() };
+    let link_target = if is_symlink {
+        conn.sftp
+            .readlink(p)
+            .map(|t| t.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    Ok(StatInfo {
+        size: st.size.unwrap_or(0),
+        is_dir: st.is_dir(),
+        modified: st.mtime.unwrap_or(0),
+        created: 0,
+        accessed: st.atime.unwrap_or(0),
+        readonly: false,
+        hidden: false,
+        mode: st.perm.unwrap_or(0) & 0o777,
+        uid: st.uid.unwrap_or(0),
+        gid: st.gid.unwrap_or(0),
+        is_symlink,
+        link_target,
+    })
+}
+
+/// Create a new empty remote file; errors if it already exists.
+#[tauri::command(rename_all = "camelCase")]
+pub fn sftp_touch(state: tauri::State<SshManager>, pane_id: String, path: String) -> Result<(), String> {
+    use ssh2::{OpenFlags, OpenType};
+    let conn = get_sftp(&state, &pane_id)?;
+    let conn = conn.lock().unwrap();
+    conn.sftp
+        .open_mode(
+            Path::new(&path),
+            OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUSIVE,
+            0o644,
+            OpenType::File,
+        )
+        .map(|_| ())
+        .map_err(|e| format!("tạo file lỗi: {e}"))
+}
+
+/// Copy ONE remote file to another remote path by streaming through the client
+/// (SFTP has no server-side copy). Emits sftp://progress like upload/download.
+#[tauri::command(rename_all = "camelCase")]
+pub fn sftp_copy(
+    app: AppHandle,
+    state: tauri::State<SshManager>,
+    pane_id: String,
+    from: String,
+    to: String,
+) -> Result<(), String> {
+    let conn = get_sftp(&state, &pane_id)?;
+    let conn = conn.lock().unwrap();
+    let mut src = conn
+        .sftp
+        .open(Path::new(&from))
+        .map_err(|e| format!("mở file remote lỗi: {e}"))?;
+    let total = src.stat().ok().and_then(|s| s.size).unwrap_or(0);
+    let mut dst = conn
+        .sftp
+        .create(Path::new(&to))
+        .map_err(|e| format!("tạo file remote lỗi: {e}"))?;
+    let name = Path::new(&from)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| from.clone());
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut done = 0u64;
+    let mut last_emit = 0u64;
+    loop {
+        let n = src.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        dst.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        done += n as u64;
+        if done - last_emit >= PROGRESS_STEP {
+            last_emit = done;
+            let _ = app.emit(
+                "sftp://progress",
+                TransferProgress { pane_id: pane_id.clone(), name: name.clone(), done, total },
+            );
+        }
+    }
+    let _ = app.emit(
+        "sftp://progress",
+        TransferProgress { pane_id: pane_id.clone(), name, done: total.max(done), total },
+    );
+    Ok(())
+}
+
+/// Recursive size of a remote subtree (bounded like sftp_search).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn sftp_dir_size(
+    state: tauri::State<'_, SshManager>,
+    pane_id: String,
+    path: String,
+) -> Result<u64, String> {
+    let conn = get_sftp(&state, &pane_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = conn.lock().unwrap();
+        let mut total = 0u64;
+        let mut stack = vec![path];
+        let mut visited = 0u32;
+        while let Some(dir) = stack.pop() {
+            if visited >= 8000 {
+                break;
+            }
+            visited += 1;
+            let list = match conn.sftp.readdir(Path::new(&dir)) {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+            for (p, st) in list {
+                let is_symlink = st.perm.unwrap_or(0) & 0o170000 == 0o120000;
+                if st.is_dir() && !is_symlink {
+                    stack.push(p.to_string_lossy().into_owned());
+                } else {
+                    total += st.size.unwrap_or(0);
+                }
+            }
+        }
+        Ok(total)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ---------- local filesystem (for the Browser pane) ----------
 
 #[tauri::command]
