@@ -50,7 +50,7 @@ pub fn edit_open(path: String, app: Option<String>) -> Result<(), String> {
             .spawn()
             .map(|_| ())
             .map_err(|e| format!("mở editor lỗi: {e}")),
-        None => tauri_plugin_opener::open_path(&path, None::<String>).map_err(|e| e.to_string()),
+        None => tauri_plugin_opener::open_path(&path, None::<&str>).map_err(|e| e.to_string()),
     }
 }
 
