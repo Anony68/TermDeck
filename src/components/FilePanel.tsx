@@ -76,6 +76,11 @@ export function FilePanel({
   onSync,
   onEditFile,
   onOpenFile,
+  onCut,
+  onCopy,
+  onPaste,
+  canPaste,
+  cutMarks,
 }: {
   title: string;
   backend: FsBackend;
@@ -97,6 +102,12 @@ export function FilePanel({
   onEditFile?: (entry: FileEntry, dir: string, app?: string) => void;
   /** Open a file with the platform handler (double-click / menu "Open"). */
   onOpenFile?: (entry: FileEntry, dir: string) => void;
+  onCut?: (entries: FileEntry[], dir: string) => void;
+  onCopy?: (entries: FileEntry[], dir: string) => void;
+  onPaste?: (dir: string) => void;
+  canPaste?: boolean;
+  /** Entries rendered dimmed (they're on the clipboard as a cut). */
+  cutMarks?: { dir: string; names: string[] } | null;
 }) {
   const [path, setPath] = useState(initialPath);
   const [entries, setEntries] = useState<FileEntry[]>([]);
@@ -301,6 +312,23 @@ export function FilePanel({
       setSelected(new Set(visible.map((v) => v.name)));
       return;
     }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) {
+      e.preventDefault();
+      const sel = selectedEntries();
+      if (sel.length) onCut?.(sel, path);
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+      e.preventDefault();
+      const sel = selectedEntries();
+      if (sel.length) onCopy?.(sel, path);
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+      e.preventDefault();
+      if (canPaste) onPaste?.(path);
+      return;
+    }
     // F2 = rename the focused entry (or the only selected one).
     if (e.key === 'F2') {
       e.preventDefault();
@@ -375,6 +403,8 @@ export function FilePanel({
   };
 
   const selectedEntries = () => entries.filter((e) => selected.has(e.name));
+  const isCutDim = (name: string) =>
+    !!cutMarks && cutMarks.dir === path && cutMarks.names.includes(name);
 
   const doMkdir = () => {
     setMenu(null);
@@ -497,7 +527,9 @@ export function FilePanel({
         ],
       },
       { label: '', separator: true },
-      // clipboard items inserted in Task 8
+      { label: t('fb.cut'), disabled: list.length === 0 || !onCut, onClick: () => onCut?.(list, path) },
+      { label: t('fb.copy'), disabled: list.length === 0 || !onCopy, onClick: () => onCopy?.(list, path) },
+      { label: t('fb.paste'), disabled: !canPaste || !onPaste, onClick: () => onPaste?.(path) },
       { label: t('fb.rename'), disabled: !target, onClick: () => target && startRename(target) },
       {
         label: t('fb.delete'),
@@ -724,6 +756,7 @@ export function FilePanel({
             key={e.name}
             data-idx={i}
             className={`fb-row fb-item${selected.has(e.name) ? ' sel' : ''}`}
+            style={isCutDim(e.name) ? { opacity: 0.45 } : undefined}
             onDoubleClick={() => openEntry(e)}
             onContextMenu={(ev) => {
               ev.preventDefault();

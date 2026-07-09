@@ -9,6 +9,7 @@ import {
   fsRemove,
   fsHome,
   fsTouch,
+  fsCopy,
   sftpConnect,
   sftpHome,
   sftpList,
@@ -20,6 +21,7 @@ import {
   sftpUpload,
   sftpDownload,
   sftpTouch,
+  sftpCopy,
   onSftpProgress,
 } from '../ipc/ssh';
 import { FilePanel, type FsBackend } from './FilePanel';
@@ -56,6 +58,16 @@ type Conn = 'connecting' | 'ready' | 'error' | 'local-only';
 /** Sync direction: 'up' = local ▶ remote, 'down' = remote ▶ local. */
 type SyncDir = 'up' | 'down';
 
+/** Which panel the clipboard's entries came from. */
+type ClipSide = 'left' | 'right';
+interface Clip {
+  op: 'copy' | 'cut';
+  side: ClipSide;
+  base: string;
+  sep: string;
+  entries: FileEntry[];
+}
+
 /**
  * Dual-pane file manager (Bitvise-style). Left = local FS. Right = remote SFTP
  * (only when the pane carries SSH settings); otherwise a second local pane so the
@@ -84,6 +96,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
   const [remoteStart, setRemoteStart] = useState<string | null>(null);
   const [leftKey, setLeftKey] = useState(0);
   const [rightKey, setRightKey] = useState(0);
+  const [clip, setClip] = useState<Clip | null>(null);
   const edits = useEdits((s) => s.edits);
   const myEdits = Object.values(edits).filter((e) => e.paneId === pane.id);
   const editErr = myEdits.some((e) => e.error);
@@ -247,7 +260,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
     toDir: string,
     ops: TransferOps,
     verb: string
-  ) => {
+  ): Promise<TransferSummary | null> => {
     setBusy(true);
     setSummary(null);
     cancelRef.current = false;
@@ -262,8 +275,10 @@ export function FileBrowser({ pane }: { pane: Pane }) {
         shouldPause: () => pausedRef.current,
       });
       setSummary({ ...result, verb });
+      return result;
     } catch (e) {
       alert(t('fb.transferErr', { err: String(e) }));
+      return null;
     } finally {
       setBusy(false);
       setBatch(null);
@@ -277,6 +292,110 @@ export function FileBrowser({ pane }: { pane: Pane }) {
     void runBatch(entries, fromLocal, remoteCwd.current, uploadOps, t('fb.verbUpload'));
   const onDownload = (entries: FileEntry[], fromRemote: string) =>
     void runBatch(entries, fromRemote, localCwd.current, downloadOps, t('fb.verbDownload'));
+
+  const localCopyOps: TransferOps = {
+    srcList: fsList,
+    srcSep: LOCAL_SEP,
+    dstList: fsList,
+    dstSep: LOCAL_SEP,
+    dstMkdir: fsMkdir,
+    doTransfer: (s, d) => fsCopy(s, d),
+  };
+  const remoteCopyOps: TransferOps = {
+    srcList: (d) => sftpList(pane.id, d),
+    srcSep: '/',
+    dstList: (d) => sftpList(pane.id, d),
+    dstSep: '/',
+    dstMkdir: (d) => sftpMkdir(pane.id, d),
+    doTransfer: (s, d) => sftpCopy(pane.id, s, d),
+  };
+
+  /** 'remote' only when this browser HAS a remote and it's the right side. */
+  const kindOf = (side: ClipSide): 'local' | 'remote' =>
+    side === 'right' && hasRemote ? 'remote' : 'local';
+
+  const doPaste = async (dstSide: ClipSide, dstDir: string) => {
+    if (!clip || busy) return;
+    const srcKind = kindOf(clip.side);
+    const dstKind = kindOf(dstSide);
+    const sameKind = srcKind === dstKind;
+    const dstSep = dstKind === 'local' ? LOCAL_SEP : '/';
+
+    // Cut into the source dir itself = no-op; a folder into its own subtree = error.
+    if (clip.op === 'cut' && clip.side === dstSide && clip.base === dstDir) {
+      setClip(null);
+      return;
+    }
+    if (sameKind) {
+      for (const en of clip.entries) {
+        if (!en.isDir) continue;
+        const src = joinPath(clip.base, en.name, clip.sep);
+        if (dstDir === src || dstDir.startsWith(src + clip.sep)) {
+          alert(t('fb.errPasteSub'));
+          return;
+        }
+      }
+    }
+
+    const ops: TransferOps = sameKind
+      ? srcKind === 'local'
+        ? localCopyOps
+        : remoteCopyOps
+      : srcKind === 'local'
+        ? uploadOps
+        : downloadOps;
+    const srcBackend = srcKind === 'local' ? localBackend : remoteBackend;
+
+    if (clip.op === 'cut' && sameKind) {
+      // Fast path: same-backend move = rename. Fall back to copy+delete per entry
+      // (name conflict at the target, or EXDEV across drives).
+      const viaCopy: FileEntry[] = [];
+      const dstNames = new Set(
+        (await ops.dstList(dstDir).catch(() => [] as FileEntry[])).map((x) => x.name)
+      );
+      for (const en of clip.entries) {
+        if (dstNames.has(en.name)) {
+          viaCopy.push(en);
+          continue;
+        }
+        try {
+          await srcBackend.rename(joinPath(clip.base, en.name, clip.sep), joinPath(dstDir, en.name, dstSep));
+        } catch {
+          viaCopy.push(en);
+        }
+      }
+      if (viaCopy.length) {
+        const res = await runBatch(viaCopy, clip.base, dstDir, ops, t('fb.verbMove'));
+        // Delete sources ONLY on a fully clean batch (no fail/skip/cancel) — never lose data.
+        if (res && !res.cancelled && res.failed === 0 && res.skipped === 0) {
+          for (const en of viaCopy) {
+            try {
+              await srcBackend.remove(joinPath(clip.base, en.name, clip.sep), en.isDir);
+            } catch {
+              /* leave the source in place */
+            }
+          }
+        }
+      }
+      setLeftKey((k) => k + 1);
+      setRightKey((k) => k + 1);
+    } else {
+      const verb = clip.op === 'cut' ? t('fb.verbMove') : t('fb.verbCopy');
+      const res = await runBatch(clip.entries, clip.base, dstDir, ops, verb);
+      if (clip.op === 'cut' && res && !res.cancelled && res.failed === 0 && res.skipped === 0) {
+        for (const en of clip.entries) {
+          try {
+            await srcBackend.remove(joinPath(clip.base, en.name, clip.sep), en.isDir);
+          } catch {
+            /* leave the source in place */
+          }
+        }
+        setLeftKey((k) => k + 1);
+        setRightKey((k) => k + 1);
+      }
+    }
+    setClip(null);
+  };
 
   // Upload files dropped from the OS file explorer onto this pane (grouped by
   // their source folder so the transfer engine's recursion + conflict handling
@@ -508,12 +627,19 @@ export function FileBrowser({ pane }: { pane: Pane }) {
             refreshKey={leftKey}
             onPathChange={setLocalCwd}
             onTransfer={(entries, from) =>
-              hasRemote ? onUpload(entries, from) : alert(t('fb.noSsh'))
+              hasRemote
+                ? onUpload(entries, from)
+                : void runBatch(entries, from, remoteCwd.current, localCopyOps, t('fb.verbCopy'))
             }
             syncLabel={planning ? t('fb.syncBusy') : t('fb.syncUp')}
             onSync={hasRemote && conn === 'ready' && !busy ? () => onSyncClick('up') : undefined}
             onEditFile={editLocal}
             onOpenFile={openLocal}
+            onCut={(entries, dir) => setClip({ op: 'cut', side: 'left', base: dir, sep: LOCAL_SEP, entries })}
+            onCopy={(entries, dir) => setClip({ op: 'copy', side: 'left', base: dir, sep: LOCAL_SEP, entries })}
+            onPaste={(dir) => void doPaste('left', dir)}
+            canPaste={!!clip && !busy}
+            cutMarks={clip?.op === 'cut' && clip.side === 'left' ? { dir: clip.base, names: clip.entries.map((e) => e.name) } : null}
           />
         )}
         <div style={{ width: 1, background: 'var(--border-3)' }} />
@@ -534,6 +660,11 @@ export function FileBrowser({ pane }: { pane: Pane }) {
               onSync={!busy ? () => onSyncClick('down') : undefined}
               onEditFile={editRemote}
               onOpenFile={openRemote}
+              onCut={(entries, dir) => setClip({ op: 'cut', side: 'right', base: dir, sep: hasRemote ? '/' : LOCAL_SEP, entries })}
+              onCopy={(entries, dir) => setClip({ op: 'copy', side: 'right', base: dir, sep: hasRemote ? '/' : LOCAL_SEP, entries })}
+              onPaste={(dir) => void doPaste('right', dir)}
+              canPaste={!!clip && !busy}
+              cutMarks={clip?.op === 'cut' && clip.side === 'right' ? { dir: clip.base, names: clip.entries.map((e) => e.name) } : null}
             />
           ) : (
             <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 20, textAlign: 'center' }}>
@@ -574,9 +705,16 @@ export function FileBrowser({ pane }: { pane: Pane }) {
               transferDir="left"
               refreshKey={rightKey}
               onPathChange={setRemoteCwd}
-              onTransfer={() => alert(t('fb.noRemote'))}
+              onTransfer={(entries, from) =>
+                void runBatch(entries, from, localCwd.current, localCopyOps, t('fb.verbCopy'))
+              }
               onEditFile={editLocal}
               onOpenFile={openLocal}
+              onCut={(entries, dir) => setClip({ op: 'cut', side: 'right', base: dir, sep: LOCAL_SEP, entries })}
+              onCopy={(entries, dir) => setClip({ op: 'copy', side: 'right', base: dir, sep: LOCAL_SEP, entries })}
+              onPaste={(dir) => void doPaste('right', dir)}
+              canPaste={!!clip && !busy}
+              cutMarks={clip?.op === 'cut' && clip.side === 'right' ? { dir: clip.base, names: clip.entries.map((e) => e.name) } : null}
             />
           )
         )}
