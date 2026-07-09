@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { FileEntry } from '../ipc/ssh';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { joinPath } from './pathUtils';
+import { useStore } from '../state/store';
+import { copyText } from '../ipc/clipboard';
 import {
   IconParent,
   IconRefresh,
@@ -26,6 +28,8 @@ export interface FsBackend {
   search?: (root: string, query: string) => Promise<Array<{ path: string; name: string; isDir: boolean }>>;
   /** Resolve the home directory, so "~" works in the path bar. */
   home?: () => Promise<string>;
+  /** Create a new empty file (errors if the name exists). */
+  touch: (path: string) => Promise<void>;
   /** Path separator + join, so local (\\) and remote (/) behave correctly. */
   sep: string;
 }
@@ -70,6 +74,8 @@ export function FilePanel({
   refreshKey,
   syncLabel,
   onSync,
+  onEditFile,
+  onOpenFile,
 }: {
   title: string;
   backend: FsBackend;
@@ -87,6 +93,10 @@ export function FilePanel({
   /** Optional "sync this whole directory" action, shown next to the transfer button. */
   syncLabel?: string;
   onSync?: () => void;
+  /** Open a file for editing (app = specific exe; undefined = default-editor resolution). */
+  onEditFile?: (entry: FileEntry, dir: string, app?: string) => void;
+  /** Open a file with the platform handler (double-click / menu "Open"). */
+  onOpenFile?: (entry: FileEntry, dir: string) => void;
 }) {
   const [path, setPath] = useState(initialPath);
   const [entries, setEntries] = useState<FileEntry[]>([]);
@@ -112,6 +122,9 @@ export function FilePanel({
     Array<{ path: string; name: string; isDir: boolean }> | null
   >(null);
   const t = useT();
+  const defaultEditor = useStore((s) => s.settings.defaultEditor);
+  const editors = useStore((s) => s.settings.editors);
+  const updateSettings = useStore((s) => s.updateSettings);
 
   const runSearch = async (q: string) => {
     if (!backend.search || !q.trim()) return;
@@ -197,6 +210,7 @@ export function FilePanel({
   const goParent = () => go(joinPath(path, '..', backend.sep));
   const openEntry = (e: FileEntry) => {
     if (e.isDir) go(joinPath(path, e.name, backend.sep));
+    else onOpenFile?.(e, path);
   };
 
   const visible = filter
@@ -378,6 +392,22 @@ export function FilePanel({
       },
     });
   };
+  const doNewFile = () => {
+    setMenu(null);
+    setAsk({
+      label: t('fb.promptNewFile'),
+      draft: '',
+      onOk: async (name) => {
+        if (!name.trim()) return;
+        try {
+          await backend.touch(joinPath(path, name.trim(), backend.sep));
+          await load(path);
+        } catch (e) {
+          setNotice(t('fb.errNewFile', { err: String(e) }));
+        }
+      },
+    });
+  };
   // Start inline rename (F2 or context menu). The row renders an input.
   const startRename = (entry: FileEntry) => {
     setMenu(null);
@@ -431,28 +461,70 @@ export function FilePanel({
     const sel = selectedEntries();
     const target = menu?.entry;
     const list = target && !selected.has(target.name) ? [target] : sel;
+    const isFile = !!target && !target.isDir;
+    const fullOf = (e: FileEntry) => joinPath(path, e.name, backend.sep);
     return [
       { label: transferLabel, disabled: list.length === 0, onClick: () => onTransfer(list, path) },
-      { label: t('fb.open'), disabled: !target?.isDir, onClick: () => target && openEntry(target) },
-      { label: t('fb.rename'), disabled: !target, onClick: () => target && startRename(target) },
-      ...(backend.chmod
-        ? [{ label: t('fb.chmod'), disabled: !target, onClick: () => target && doChmod(target) }]
-        : []),
-      { label: '', separator: true },
+      { label: t('fb.open'), disabled: !target, onClick: () => target && openEntry(target) },
       {
-        label: t('fb.selectAll'),
-        disabled: visible.length === 0,
-        onClick: () => setSelected(new Set(visible.map((v) => v.name))),
+        label: t('fb.edit'),
+        disabled: !isFile || !onEditFile,
+        onClick: () => target && onEditFile?.(target, path, defaultEditor || undefined),
       },
-      { label: t('fb.newFolder'), onClick: doMkdir },
-      { label: t('fb.refresh'), onClick: () => load(path) },
+      {
+        label: t('fb.editWith'),
+        disabled: !isFile || !onEditFile,
+        children: [
+          ...editors.map((ed) => ({
+            label: ed.name,
+            onClick: () => target && onEditFile?.(target, path, ed.path),
+          })),
+          ...(editors.length ? [{ label: '', separator: true }] : []),
+          {
+            label: t('fb.editBrowse'),
+            onClick: async () => {
+              const { open } = await import('@tauri-apps/plugin-dialog');
+              const p = await open({ multiple: false });
+              if (typeof p !== 'string' || !target) return;
+              const base = p.split(/[\\/]/).pop() ?? p;
+              const dot = base.lastIndexOf('.');
+              const name = dot > 0 ? base.slice(0, dot) : base;
+              const cur = useStore.getState().settings.editors;
+              if (!cur.some((e) => e.path === p)) updateSettings({ editors: [...cur, { name, path: p }] });
+              onEditFile?.(target, path, p);
+            },
+          },
+        ],
+      },
       { label: '', separator: true },
+      // clipboard items inserted in Task 8
+      { label: t('fb.rename'), disabled: !target, onClick: () => target && startRename(target) },
       {
         label: t('fb.delete'),
         danger: true,
         disabled: list.length === 0,
         onClick: () => list.length && setConfirmDel(list),
       },
+      { label: '', separator: true },
+      { label: t('fb.newFile'), onClick: doNewFile },
+      { label: t('fb.newFolder'), onClick: doMkdir },
+      { label: '', separator: true },
+      {
+        label: t('fb.copyPath'),
+        disabled: !target,
+        onClick: () => target && void copyText(fullOf(target)),
+      },
+      ...(backend.chmod
+        ? [{ label: t('fb.chmod'), disabled: !target, onClick: () => target && doChmod(target) }]
+        : []),
+      // Properties item inserted in Task 9
+      { label: '', separator: true },
+      {
+        label: t('fb.selectAll'),
+        disabled: visible.length === 0,
+        onClick: () => setSelected(new Set(visible.map((v) => v.name))),
+      },
+      { label: t('fb.refresh'), onClick: () => load(path) },
     ];
   };
 

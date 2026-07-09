@@ -8,6 +8,7 @@ import {
   fsRename,
   fsRemove,
   fsHome,
+  fsTouch,
   sftpConnect,
   sftpHome,
   sftpList,
@@ -18,11 +19,14 @@ import {
   sftpSearch,
   sftpUpload,
   sftpDownload,
+  sftpTouch,
   onSftpProgress,
 } from '../ipc/ssh';
 import { FilePanel, type FsBackend } from './FilePanel';
 import { IconSwap, IconPlay, IconPause, IconClose, IconCheck, IconPencil } from './icons';
-import { useEdits, uploadNow, redownload, stopEdit } from '../state/edits';
+import { useEdits, uploadNow, redownload, stopEdit, startEdit } from '../state/edits';
+import { editOpen } from '../ipc/edit';
+import { joinPath } from './pathUtils';
 import {
   runTransfer,
   type ConflictAction,
@@ -148,7 +152,7 @@ export function FileBrowser({ pane }: { pane: Pane }) {
   // Stable across re-renders (Pane re-renders every second for stats/uptime);
   // otherwise FilePanel's load effect would re-fire and reset path + selection.
   const localBackend = useMemo<FsBackend>(
-    () => ({ list: fsList, mkdir: fsMkdir, rename: fsRename, remove: fsRemove, home: fsHome, sep: LOCAL_SEP }),
+    () => ({ list: fsList, mkdir: fsMkdir, rename: fsRename, remove: fsRemove, home: fsHome, touch: fsTouch, sep: LOCAL_SEP }),
     []
   );
   const remoteBackend = useMemo<FsBackend>(
@@ -160,10 +164,37 @@ export function FileBrowser({ pane }: { pane: Pane }) {
       chmod: (p, m) => sftpChmod(pane.id, p, m),
       search: (root, q) => sftpSearch(pane.id, root, q),
       home: () => sftpHome(pane.id, ''),
+      touch: (p) => sftpTouch(pane.id, p),
       sep: '/',
     }),
     [pane.id]
   );
+
+  // Edit: local = open the file itself; remote = temp-download + watch + auto-upload.
+  const editLocal = useMemo(
+    () => (e: FileEntry, dir: string, app?: string) =>
+      void startEdit({ paneId: pane.id, remote: false, dir, name: e.name, sep: LOCAL_SEP, app }).catch(
+        (err) => alert(t('fb.errEdit', { err: String(err) }))
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pane.id]
+  );
+  const editRemote = useMemo(
+    () => (e: FileEntry, dir: string, app?: string) =>
+      void startEdit({ paneId: pane.id, remote: true, dir, name: e.name, sep: '/', app }).catch(
+        (err) => alert(t('fb.errEdit', { err: String(err) }))
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pane.id]
+  );
+  // Open: local = OS default app; remote "Open" = the edit flow (Bitvise behavior).
+  const openLocal = useMemo(
+    () => (e: FileEntry, dir: string) =>
+      void editOpen(joinPath(dir, e.name, LOCAL_SEP)).catch((err) => alert(t('fb.errEdit', { err: String(err) }))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+  const openRemote = useMemo(() => (e: FileEntry, dir: string) => editRemote(e, dir, undefined), [editRemote]);
 
   // Track + persist each side's directory (restored on reopen / app restart).
   const setLocalCwd = useMemo(
@@ -481,6 +512,8 @@ export function FileBrowser({ pane }: { pane: Pane }) {
             }
             syncLabel={planning ? t('fb.syncBusy') : t('fb.syncUp')}
             onSync={hasRemote && conn === 'ready' && !busy ? () => onSyncClick('up') : undefined}
+            onEditFile={editLocal}
+            onOpenFile={openLocal}
           />
         )}
         <div style={{ width: 1, background: 'var(--border-3)' }} />
@@ -499,6 +532,8 @@ export function FileBrowser({ pane }: { pane: Pane }) {
               onTransfer={(entries, from) => onDownload(entries, from)}
               syncLabel={planning ? t('fb.syncBusyDown') : t('fb.syncDown')}
               onSync={!busy ? () => onSyncClick('down') : undefined}
+              onEditFile={editRemote}
+              onOpenFile={openRemote}
             />
           ) : (
             <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 20, textAlign: 'center' }}>
@@ -540,6 +575,8 @@ export function FileBrowser({ pane }: { pane: Pane }) {
               refreshKey={rightKey}
               onPathChange={setRemoteCwd}
               onTransfer={() => alert(t('fb.noRemote'))}
+              onEditFile={editLocal}
+              onOpenFile={openLocal}
             />
           )
         )}
