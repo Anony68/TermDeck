@@ -63,27 +63,29 @@ export async function startEdit(o: {
     return;
   }
   // Re-editing the same remote file reuses its temp copy + watcher (never
-  // clobbers unsaved editor state; use redownload() to refresh explicitly).
+  // clobbers unsaved editor state, or an in-flight upload's uploading/queued
+  // state; use redownload() to refresh explicitly).
   const existing = Object.values(useEdits.getState().edits).find(
     (e) => e.paneId === o.paneId && e.remotePath === full
   );
-  const editId = existing?.editId ?? `${o.paneId}-${Date.now().toString(36)}`;
-  let temp = existing?.tempPath;
-  if (!temp) {
-    temp = await editPrepare(editId, o.name);
-    await sftpDownload(o.paneId, full, temp);
-    await editWatch(editId, temp);
+  if (existing) {
+    await editOpen(existing.tempPath, o.app);
+    return;
   }
+  const editId = `${o.paneId}-${Date.now().toString(36)}`;
+  const temp = await editPrepare(editId, o.name);
+  await sftpDownload(o.paneId, full, temp);
+  await editWatch(editId, temp);
   useEdits.getState().upsert({
     editId,
     paneId: o.paneId,
     remotePath: full,
     tempPath: temp,
     name: o.name,
-    lastUpload: existing?.lastUpload ?? 0,
+    lastUpload: 0,
     uploading: false,
     queued: false,
-    error: existing?.error ?? null,
+    error: null,
   });
   await editOpen(temp, o.app);
 }
@@ -110,7 +112,8 @@ export async function uploadNow(editId: string): Promise<void> {
 /** Re-download the remote file over the temp copy (explicit refresh). */
 export async function redownload(editId: string): Promise<void> {
   const rec = useEdits.getState().edits[editId];
-  if (!rec) return;
+  // Never overwrite the temp file while an upload may still be reading it.
+  if (!rec || rec.uploading || rec.queued) return;
   await sftpDownload(rec.paneId, rec.remotePath, rec.tempPath);
 }
 
