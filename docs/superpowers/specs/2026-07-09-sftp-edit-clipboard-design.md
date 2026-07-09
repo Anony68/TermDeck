@@ -125,9 +125,10 @@ panes, single selection).
 New "Editor" section in `SettingsWindow.tsx` (pattern: `ShellsSection`):
 default-editor path (Browse via `pickFolder`-style file picker) + editors
 list (add/remove). `Settings` gains `defaultEditor?: string` and
-`editors: {name, path}[]`; add to `DEFAULT_SETTINGS`; bump `STORE_VERSION`
-to 5 (migration: default empty). All new labels get `fb.*` / `set.*` keys in
-BOTH vi and en in `src/i18n.ts`.
+`editors: {name, path}[]`; add to `DEFAULT_SETTINGS`. No STORE_VERSION bump
+needed: `hydrate()` already merges `{...DEFAULT_SETTINGS, ...persisted.settings}`
+(store.ts:306), so new keys default cleanly. All new labels get `fb.*` /
+`set.*` / `prop.*` keys in BOTH vi and en in `src/i18n.ts`.
 
 ### 6. Menu layout (final)
 
@@ -142,8 +143,9 @@ Transfer · **Open** · **Edit** · **Edit with ▸** · sep · **Cut** · **Cop
   create-or-truncate).
 - Editors that save via rename-replace (Notepad++, VS Code): watcher watches
   the parent dir and matches the filename, debounce 400 ms.
-- Temp files cleaned up on `edit_stop` and on app start (sweep stale
-  `TermDeck-edit` subdirs older than 7 days).
+- Temp files are swept at app start (stale `TermDeck-edit` subdirs older than
+  7 days). `edit_stop` does NOT delete the temp file — the editor may still
+  hold it open (deleting an open file fails on Windows anyway).
 - All new background `std::process::Command` spawns use `CREATE_NO_WINDOW`
   on Windows.
 
