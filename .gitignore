@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 *handoff*.zip
+*.stackdump
+
+# SDD scratch (progress ledger, task briefs/reports, review diffs)
+.superpowers/
