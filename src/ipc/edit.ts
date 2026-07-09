@@ -12,9 +12,9 @@ export async function editOpen(path: string, app?: string): Promise<void> {
 export async function editWatch(editId: string, path: string): Promise<void> {
   await invoke('edit_watch', { editId, path });
 }
-export function editUnwatch(editId: string): void {
+export async function editUnwatch(editId: string): Promise<void> {
   if (!IS_TAURI) return;
-  void invoke('edit_unwatch', { editId });
+  await invoke('edit_unwatch', { editId });
 }
 /** Fires (debounced) every time a watched temp file is saved by the editor. */
 export async function onEditChanged(cb: (editId: string) => void): Promise<() => void> {

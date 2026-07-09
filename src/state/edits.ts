@@ -114,11 +114,18 @@ export async function redownload(editId: string): Promise<void> {
   const rec = useEdits.getState().edits[editId];
   // Never overwrite the temp file while an upload may still be reading it.
   if (!rec || rec.uploading || rec.queued) return;
-  await sftpDownload(rec.paneId, rec.remotePath, rec.tempPath);
+  // Unwatch while we overwrite the temp copy, or our own write would
+  // debounce into a pointless (and potentially stale) re-upload.
+  await editUnwatch(editId);
+  try {
+    await sftpDownload(rec.paneId, rec.remotePath, rec.tempPath);
+  } finally {
+    await editWatch(editId, rec.tempPath);
+  }
 }
 
 export function stopEdit(editId: string): void {
-  editUnwatch(editId);
+  void editUnwatch(editId);
   useEdits.getState().remove(editId);
 }
 
