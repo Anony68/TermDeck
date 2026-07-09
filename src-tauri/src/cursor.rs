@@ -81,11 +81,15 @@ fn ide_token() -> Option<String> {
     if !db.exists() {
         return None;
     }
-    let out = std::process::Command::new("sqlite3")
-        .arg(&db)
-        .arg("SELECT value FROM ItemTable WHERE key='cursorAuth/accessToken'")
-        .output()
-        .ok()?;
+    let mut cmd = std::process::Command::new("sqlite3");
+    cmd.arg(&db)
+        .arg("SELECT value FROM ItemTable WHERE key='cursorAuth/accessToken'");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: no flashing console
+    }
+    let out = cmd.output().ok()?;
     if !out.status.success() {
         return None;
     }
