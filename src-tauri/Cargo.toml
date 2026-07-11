@@ -1,6 +1,6 @@
 [package]
 name = "xcmd"
-version = "0.1.9"
+version = "0.1.10"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -29,6 +29,9 @@ tauri-plugin-opener = "2.5.4"
 tauri-plugin-clipboard-manager = "2"
 ureq = "3.3.0"
 base64 = "0.22"
+# In-process SQLite for reading Cursor's state.vscdb — spawning `sqlite3.exe`
+# can flash a console window on Windows and requires it on PATH.
+rusqlite = { version = "0.32", features = ["bundled"] }
 keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
 notify = "6"
 

@@ -68,7 +68,8 @@ fn cli_token() -> Option<String> {
 }
 
 /// Cursor IDE: `cursorAuth/accessToken` in the state.vscdb sqlite database.
-/// Read via the system `sqlite3` (present on macOS/Linux; skipped elsewhere).
+/// Read in-process with rusqlite — an external `sqlite3` may not be on PATH,
+/// and any subprocess risks flashing a console window on Windows.
 fn ide_token() -> Option<String> {
     let db = if cfg!(target_os = "macos") {
         home()?.join("Library/Application Support/Cursor/User/globalStorage/state.vscdb")
@@ -78,25 +79,30 @@ fn ide_token() -> Option<String> {
     } else {
         home()?.join(".config/Cursor/User/globalStorage/state.vscdb")
     };
+    token_from_vscdb(&db)
+}
+
+/// Pull the Cursor access token out of a state.vscdb file. Read-only open so a
+/// running Cursor (which holds write locks) degrades to None, never an error
+/// dialog; a short busy timeout rides out transient locks.
+fn token_from_vscdb(db: &std::path::Path) -> Option<String> {
     if !db.exists() {
         return None;
     }
-    let mut cmd = std::process::Command::new("sqlite3");
-    cmd.arg(&db)
-        .arg("SELECT value FROM ItemTable WHERE key='cursorAuth/accessToken'");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: no flashing console
-    }
-    let out = cmd.output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout)
-        .trim()
-        .trim_matches('"')
-        .to_string();
+    let conn = rusqlite::Connection::open_with_flags(
+        db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()?;
+    let _ = conn.busy_timeout(std::time::Duration::from_millis(250));
+    let s: String = conn
+        .query_row(
+            "SELECT value FROM ItemTable WHERE key='cursorAuth/accessToken'",
+            [],
+            |r| r.get(0),
+        )
+        .ok()?;
+    let s = s.trim().trim_matches('"').to_string();
     looks_like_jwt(&s).then_some(s)
 }
 
@@ -171,4 +177,68 @@ pub async fn cursor_usage() -> CursorUsage {
     tauri::async_runtime::spawn_blocking(fetch_usage)
         .await
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fake_jwt() -> String {
+        // Three dot-separated segments, > 40 chars total.
+        format!("{}.{}.{}", "a".repeat(20), "b".repeat(20), "c".repeat(20))
+    }
+
+    #[test]
+    fn reads_token_from_vscdb() {
+        let dir = std::env::temp_dir().join("xcmd-test-vscdb");
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("state.vscdb");
+        let _ = std::fs::remove_file(&db);
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB)")
+            .unwrap();
+        let jwt = fake_jwt();
+        conn.execute(
+            "INSERT INTO ItemTable (key, value) VALUES ('cursorAuth/accessToken', ?1)",
+            [&jwt],
+        )
+        .unwrap();
+        drop(conn);
+
+        assert_eq!(token_from_vscdb(&db), Some(jwt));
+    }
+
+    #[test]
+    fn missing_key_or_db_gives_none() {
+        let dir = std::env::temp_dir().join("xcmd-test-vscdb");
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("empty.vscdb");
+        let _ = std::fs::remove_file(&db);
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB)")
+            .unwrap();
+        drop(conn);
+
+        assert_eq!(token_from_vscdb(&db), None);
+        assert_eq!(token_from_vscdb(&dir.join("does-not-exist.vscdb")), None);
+    }
+
+    /// On a dev machine with Cursor installed, verify the real database reads
+    /// cleanly in-process. Skips (trivially passes) when Cursor is absent.
+    #[test]
+    fn reads_real_cursor_db_when_present() {
+        let db = if cfg!(target_os = "windows") {
+            match std::env::var("APPDATA") {
+                Ok(a) => std::path::PathBuf::from(a).join("Cursor/User/globalStorage/state.vscdb"),
+                Err(_) => return,
+            }
+        } else {
+            return;
+        };
+        if !db.exists() {
+            return;
+        }
+        let tok = token_from_vscdb(&db);
+        assert!(tok.is_some(), "real state.vscdb exists but no token was read");
+    }
 }
