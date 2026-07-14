@@ -126,7 +126,17 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
     termRef.current = term;
     fitRef.current = fit;
     term.loadAddon(fit);
-    term.loadAddon(new WebLinksAddon());
+    // URLs open in the system browser on Ctrl+click (Cmd on macOS) only — a bare
+    // click fires constantly while selecting text, and WebView2 ignores window.open
+    // (the addon's default handler), so route through the opener plugin.
+    term.loadAddon(
+      new WebLinksAddon((e, uri) => {
+        if (!(IS_MAC ? e.metaKey : e.ctrlKey)) return;
+        void import('@tauri-apps/plugin-opener')
+          .then(({ openUrl }) => openUrl(uri))
+          .catch(() => {});
+      })
+    );
     term.open(host);
 
     // Copy/paste + interrupt via the platform's primary modifier: Cmd on macOS,
@@ -157,6 +167,14 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
           if (txt && cur) writeSession(cur, txt);
         });
         return false; // consumed as paste
+      }
+      if (key === 'a') {
+        // Never let select-all highlight the whole terminal buffer/page; the app
+        // inside decides what ^A means (Claude Code / PSReadLine: select its input).
+        e.preventDefault();
+        const cur = paneRef.current;
+        if (cur) writeSession(cur, '\x01');
+        return false;
       }
       return true; // everything else → shell
     });

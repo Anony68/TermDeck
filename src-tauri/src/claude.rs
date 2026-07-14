@@ -202,6 +202,73 @@ pub fn claude_sessions(cwd: String) -> Vec<SessionInfo> {
     out
 }
 
+// ---------- plan viewer (the last ExitPlanMode plan of a session) ----------
+
+/// The most recent plan Claude proposed in the newest session for a cwd.
+#[derive(Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanInfo {
+    pub found: bool,
+    pub plan: String,
+}
+
+/// Last `ExitPlanMode` tool call's `input.plan` in a transcript. Transcripts run
+/// to tens of MB, so lines are substring-filtered before any JSON parsing.
+fn last_plan_in_file(path: &std::path::Path) -> Option<String> {
+    let raw = std::fs::read(path).ok()?;
+    let content = String::from_utf8_lossy(&raw);
+    let mut last: Option<String> = None;
+    for line in content.lines() {
+        if !line.contains("ExitPlanMode") {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let Some(blocks) = v
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_array())
+        else {
+            continue;
+        };
+        for b in blocks {
+            if b.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+                && b.get("name").and_then(|n| n.as_str()) == Some("ExitPlanMode")
+            {
+                if let Some(p) = b
+                    .get("input")
+                    .and_then(|i| i.get("plan"))
+                    .and_then(|p| p.as_str())
+                {
+                    let p = p.trim();
+                    if !p.is_empty() {
+                        last = Some(p.to_string());
+                    }
+                }
+            }
+        }
+    }
+    last
+}
+
+/// Latest plan for the newest session of `cwd` (blocking full-file scan, so it
+/// runs off the main thread and only when the user asks to view the plan).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn claude_plan(cwd: String) -> PlanInfo {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some((path, _)) = newest_transcript(&cwd) else {
+            return PlanInfo::default();
+        };
+        match last_plan_in_file(&path) {
+            Some(plan) => PlanInfo { found: true, plan },
+            None => PlanInfo::default(),
+        }
+    })
+    .await
+    .unwrap_or_default()
+}
+
 // ---------- plan usage (the data behind the CLI's /usage screen) ----------
 
 /// One rate-limit window: percent used (0–100) + ISO reset timestamp.
@@ -392,4 +459,45 @@ pub fn claude_session(cwd: String) -> SessionState {
     st.waiting_for_input =
         last_content_role == Some("assistant") && st.stop_reason == "end_turn";
     st
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plan_line(plan: &str) -> String {
+        serde_json::json!({
+            "type": "assistant",
+            "message": { "content": [
+                { "type": "tool_use", "name": "ExitPlanMode", "input": { "plan": plan } }
+            ]}
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn last_plan_wins() {
+        let dir = std::env::temp_dir().join("termdeck-plan-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("s.jsonl");
+        let noise = r#"{"type":"user","message":{"content":"ExitPlanMode mentioned in text"}}"#;
+        std::fs::write(
+            &path,
+            format!("{}\n{}\n{}\n", plan_line("# old plan"), noise, plan_line("# new plan")),
+        )
+        .unwrap();
+        assert_eq!(last_plan_in_file(&path).as_deref(), Some("# new plan"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn no_plan_gives_none() {
+        let dir = std::env::temp_dir().join("termdeck-plan-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("empty.jsonl");
+        std::fs::write(&path, r#"{"type":"assistant","message":{"content":[]}}"#).unwrap();
+        assert_eq!(last_plan_in_file(&path), None);
+        assert_eq!(last_plan_in_file(&dir.join("missing.jsonl")), None);
+        let _ = std::fs::remove_file(&path);
+    }
 }

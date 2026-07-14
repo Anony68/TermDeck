@@ -47,6 +47,8 @@ const USAGE_VIEW_KEY = 'termdeck.usageView';
  */
 function UsageWidget() {
   const lang = useStore((s) => s.settings.language);
+  const usageClaude = useStore((s) => s.settings.usageClaude);
+  const usageCursor = useStore((s) => s.settings.usageCursor);
   const t = useT();
   const [claude, setClaude] = useState<ClaudeUsage | null>(null);
   const [cursor, setCursor] = useState<CursorUsage | null>(null);
@@ -56,9 +58,14 @@ function UsageWidget() {
 
   useEffect(() => {
     let alive = true;
+    // A provider toggled off in Settings is never polled (no token reads, no
+    // network) and its stale data is dropped immediately.
+    if (!usageClaude) setClaude(null);
+    if (!usageCursor) setCursor(null);
+    if (!usageClaude && !usageCursor) return;
     const load = () => {
-      void claudeUsage().then((u) => alive && setClaude(u));
-      void cursorUsage().then((u) => alive && setCursor(u));
+      if (usageClaude) void claudeUsage().then((u) => alive && setClaude(u));
+      if (usageCursor) void cursorUsage().then((u) => alive && setCursor(u));
     };
     load();
     const iv = window.setInterval(load, 60_000);
@@ -66,12 +73,13 @@ function UsageWidget() {
       alive = false;
       window.clearInterval(iv);
     };
-  }, []);
+  }, [usageClaude, usageCursor]);
 
   // Show the widget if either provider has data. The toggle picks which to view;
   // the selected provider may be empty (shows a hint) so the user can still switch.
   if (!claude && !cursor) return null;
-  const active: UsageView = view;
+  const enabled: Record<UsageView, boolean> = { claude: usageClaude, cursor: usageCursor };
+  const active: UsageView = enabled[view] ? view : view === 'claude' ? 'cursor' : 'claude';
   const select = (v: UsageView) => {
     setView(v);
     localStorage.setItem(USAGE_VIEW_KEY, v);
@@ -185,8 +193,8 @@ function UsageWidget() {
       }}
     >
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-        {seg('claude', <ClaudeIcon size={12} />, 'Claude Code')}
-        {seg('cursor', <CursorIcon size={13} />, 'Cursor')}
+        {usageClaude && seg('claude', <ClaudeIcon size={12} />, 'Claude Code')}
+        {usageCursor && seg('cursor', <CursorIcon size={13} />, 'Cursor')}
       </span>
       <span style={{ width: 1, height: 12, background: 'var(--border-2)' }} />
       {body}

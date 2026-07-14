@@ -225,6 +225,7 @@ pub fn run() {
             claude::claude_session,
             claude::claude_sessions,
             claude::claude_usage,
+            claude::claude_plan,
             cursor::cursor_usage,
             ssh::spawn_ssh,
             ssh::write_ssh,

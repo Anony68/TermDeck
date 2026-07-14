@@ -118,6 +118,16 @@ export default function App() {
       } else if (mod && k === 'w') {
         e.preventDefault(); // even unfocused: keep Cmd+W from closing the window
         if (s.focusedPaneId) s.removePane(s.focusedPaneId);
+      } else if (mod && k === 'a') {
+        // Block the webview's select-all from highlighting the whole UI. Real
+        // inputs keep native behavior; terminals handle ^A themselves
+        // (KeepAliveTerminal forwards it to the app running inside).
+        const el = e.target as HTMLElement | null;
+        const editable =
+          el instanceof HTMLInputElement ||
+          el instanceof HTMLTextAreaElement ||
+          !!el?.isContentEditable;
+        if (!editable) e.preventDefault();
       } else if (e.ctrlKey && e.key === 'Tab') {
         e.preventDefault();
         const i = s.tabs.findIndex((t) => t.id === s.activeTabId);

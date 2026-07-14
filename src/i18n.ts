@@ -184,6 +184,10 @@ const T = {
   'claude.panelIdle': { vi: 'Sẵn sàng', en: 'Ready' },
   'claude.needAttention': { vi: 'Claude đang chờ bạn trả lời', en: 'Claude is waiting for your reply' },
   'claude.you': { vi: 'Bạn', en: 'You' },
+  'claude.viewPlanTip': { vi: 'Xem plan gần nhất Claude đã đề xuất trong phiên này', en: 'View the latest plan Claude proposed in this session' },
+  'claude.planTitle': { vi: 'Plan của Claude', en: "Claude's plan" },
+  'claude.planEmpty': { vi: 'Phiên này chưa có plan nào (Claude chưa dùng plan mode).', en: 'No plan in this session yet (Claude has not used plan mode).' },
+  'claude.openHint': { vi: 'Ctrl+click để mở', en: 'Ctrl+click to open' },
 
   // ----- terminal context menu -----
   'term.copy': { vi: 'Sao chép', en: 'Copy' },
@@ -424,6 +428,11 @@ const T = {
   'set.general.zoomHint': { vi: 'Phóng to/thu nhỏ toàn bộ giao diện (chữ, nút, terminal).', en: 'Scale the whole UI (text, buttons, terminals).' },
   'set.general.termFont': { vi: 'CỠ CHỮ TERMINAL', en: 'TERMINAL FONT SIZE' },
   'set.general.termFontHint': { vi: 'Áp dụng ngay cho tất cả terminal đang mở.', en: 'Applies immediately to all open terminals.' },
+  'set.general.usage': { vi: 'USAGE TRÊN THANH CÔNG CỤ', en: 'TOOLBAR USAGE WIDGET' },
+  'set.general.usageClaude': { vi: 'Lấy usage Claude Code', en: 'Fetch Claude Code usage' },
+  'set.general.usageClaudeDesc': { vi: 'Đọc mức dùng gói Claude mỗi 60 giây và hiện trên thanh công cụ.', en: 'Poll Claude plan usage every 60 seconds and show it in the toolbar.' },
+  'set.general.usageCursor': { vi: 'Lấy usage Cursor', en: 'Fetch Cursor usage' },
+  'set.general.usageCursorDesc': { vi: 'Đọc mức dùng gói Cursor mỗi 60 giây và hiện trên thanh công cụ.', en: 'Poll Cursor plan usage every 60 seconds and show it in the toolbar.' },
   'font.small': { vi: 'Nhỏ', en: 'Small' },
   'font.medium': { vi: 'Vừa', en: 'Medium' },
   'font.large': { vi: 'Lớn', en: 'Large' },
@@ -496,6 +505,8 @@ const T = {
   'set.keys.closeTerminal': { vi: 'Đóng terminal đang chọn', en: 'Close selected terminal' },
   'set.keys.switchTab': { vi: 'Chuyển tab', en: 'Switch tab' },
   'set.keys.changeLayout': { vi: 'Đổi bố cục grid', en: 'Change grid layout' },
+  'set.keys.openLink': { vi: 'Mở link / file (trong terminal & dòng chat Claude)', en: 'Open link / file (in terminal & Claude chat line)' },
+  'set.keys.selectAllInput': { vi: 'Chọn hết chữ trong ô nhập của app trong terminal (không bôi đen cả màn hình)', en: "Select all in the in-terminal app's input (not the whole screen)" },
 
   // ----- settings: projects -----
   'set.projects.title': { vi: 'Dự án', en: 'Projects' },

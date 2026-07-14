@@ -42,6 +42,8 @@ const DEFAULT_SETTINGS: Settings = {
   language: 'en',
   defaultEditor: '',
   editors: [],
+  usageClaude: true,
+  usageCursor: true,
 };
 
 const STORE_VERSION = 4;

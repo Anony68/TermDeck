@@ -103,6 +103,10 @@ export interface Settings {
   defaultEditor: string;
   /** Editors offered in the "Edit with…" submenu. */
   editors: EditorApp[];
+  /** Poll & show Claude Code plan usage in the toolbar widget. */
+  usageClaude: boolean;
+  /** Poll & show Cursor plan usage in the toolbar widget. */
+  usageCursor: boolean;
 }
 
 export interface Snapshot {

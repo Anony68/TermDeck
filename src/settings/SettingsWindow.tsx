@@ -141,7 +141,10 @@ function ToggleRow({
 }: {
   title: string;
   desc: string;
-  settingKey: keyof Pick<Settings, 'restoreOnStartup' | 'restoreCwd' | 'restoreGrid' | 'autoRunCommand'>;
+  settingKey: keyof Pick<
+    Settings,
+    'restoreOnStartup' | 'restoreCwd' | 'restoreGrid' | 'autoRunCommand' | 'usageClaude' | 'usageCursor'
+  >;
 }) {
   const value = useStore((s) => s.settings[settingKey]);
   const updateSettings = useStore((s) => s.updateSettings);
@@ -469,6 +472,31 @@ function GeneralSection() {
           {t('set.general.termFontHint')}
         </div>
       </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ font: '600 11px var(--font-ui)', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
+          {t('set.general.usage')}
+        </div>
+        <div
+          style={{
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border-2)',
+            borderRadius: 10,
+            overflow: 'hidden',
+          }}
+        >
+          <ToggleRow
+            title={t('set.general.usageClaude')}
+            desc={t('set.general.usageClaudeDesc')}
+            settingKey="usageClaude"
+          />
+          <ToggleRow
+            title={t('set.general.usageCursor')}
+            desc={t('set.general.usageCursorDesc')}
+            settingKey="usageCursor"
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -694,6 +722,8 @@ function KeysSection() {
     [`${mod} + W`, t('set.keys.closeTerminal')],
     ['Ctrl + Tab', t('set.keys.switchTab')],
     [`${alt} + 1..6`, t('set.keys.changeLayout')],
+    [`${mod} + Click`, t('set.keys.openLink')],
+    [`${mod} + A`, t('set.keys.selectAllInput')],
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

@@ -281,6 +281,15 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* File paths / URLs in the chat line — Ctrl+click opens them. */
+.cp-msg .cp-link {
+  border-bottom: 1px dotted color-mix(in srgb, var(--text-muted) 55%, transparent);
+  cursor: pointer;
+}
+.cp-msg .cp-link:hover {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
 
 /* SSH reconnecting indicator in the pane header. */
 .ssh-reconnect {

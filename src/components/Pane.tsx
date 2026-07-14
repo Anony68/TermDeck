@@ -321,7 +321,7 @@ export function Pane({ pane }: { pane: PaneModel }) {
       )}
 
       {claudeRunning && claudeSession?.found && (
-        <ClaudePanel session={claudeSession} busy={claudeBusy} />
+        <ClaudePanel session={claudeSession} busy={claudeBusy} cwd={pane.cwd} />
       )}
 
       {!isBrowser && status === 'running' && (

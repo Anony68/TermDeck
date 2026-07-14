@@ -66,6 +66,21 @@ export async function claudeUsage(): Promise<ClaudeUsage | null> {
   }
 }
 
+/** The most recent plan Claude proposed in the newest session (ExitPlanMode). */
+export interface ClaudePlan {
+  found: boolean;
+  plan: string;
+}
+
+export async function claudePlan(cwd: string): Promise<ClaudePlan> {
+  if (!IS_TAURI || !cwd) return { found: false, plan: '' };
+  try {
+    return await invoke<ClaudePlan>('claude_plan', { cwd });
+  } catch {
+    return { found: false, plan: '' };
+  }
+}
+
 export interface ClaudeSessionInfo {
   sessionId: string;
   title: string;
