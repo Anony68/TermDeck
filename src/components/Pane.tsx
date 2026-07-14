@@ -10,7 +10,7 @@ import { ClaudeIcon } from './ClaudeIcon';
 import { ClaudePanel } from './ClaudePanel';
 import { ClaudeSessionsDialog } from './ClaudeSessionsDialog';
 import { FileBrowser } from './FileBrowser';
-import { IconPin, IconFolder, IconRefresh, IconClose, IconClock } from './icons';
+import { IconPin, IconFolder, IconRefresh, IconClose, IconClock, IconStop } from './icons';
 import { writeSession } from '../ipc/session';
 import { useT } from '../i18n';
 
@@ -277,6 +277,18 @@ export function Pane({ pane }: { pane: PaneModel }) {
             }}
           >
             <IconFolder size={14} />
+          </span>
+        )}
+        {!isBrowser && status === 'running' && (
+          <span
+            className="pane-ctl danger"
+            title={t('pane.stopTip')}
+            onClick={(e) => {
+              e.stopPropagation();
+              stopPane(pane.id);
+            }}
+          >
+            <IconStop size={14} />
           </span>
         )}
         <span

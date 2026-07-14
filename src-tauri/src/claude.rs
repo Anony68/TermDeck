@@ -283,8 +283,17 @@ pub struct UsageWindow {
 #[serde(rename_all = "camelCase")]
 pub struct UsageInfo {
     pub found: bool,
+    /// "Current session" on the web (5-hour window).
     pub five_hour: UsageWindow,
+    /// Weekly limit across all models.
     pub seven_day: UsageWindow,
+    /// Weekly limit for the plan's premium model, if the API reports one
+    /// (`seven_day_opus`, `seven_day_fable`, …). `model_label` is empty when absent.
+    pub seven_day_model: UsageWindow,
+    /// Display name for `seven_day_model`, derived from the API key ("Opus", "Fable").
+    pub model_label: String,
+    /// Served from cache because the last refresh failed (rate limit / offline).
+    pub stale: bool,
 }
 
 fn token_from_json(s: &str) -> Option<String> {
@@ -315,47 +324,138 @@ fn oauth_token() -> Option<String> {
     token_from_json(&std::fs::read_to_string(path).ok()?)
 }
 
-fn fetch_usage() -> UsageInfo {
-    let none = UsageInfo::default();
-    let Some(token) = oauth_token() else {
-        return none;
+/// Parse the `/api/oauth/usage` payload. Windows are objects with `utilization`
+/// + `resets_at`; besides the two fixed ones the API may expose a weekly window
+/// for the plan's premium model under `seven_day_<model>` (opus, fable, …) —
+/// that's the third bar the web UI shows, so pick up whatever key is there.
+fn parse_usage(v: &Value) -> Option<UsageInfo> {
+    let win = |o: Option<&Value>| UsageWindow {
+        utilization: o
+            .and_then(|o| o.get("utilization"))
+            .and_then(|x| x.as_f64())
+            .unwrap_or(0.0),
+        resets_at: o
+            .and_then(|o| o.get("resets_at"))
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
     };
+    let obj = v.as_object()?;
+    if !obj.contains_key("five_hour") && !obj.contains_key("seven_day") {
+        return None; // error payload or a shape we don't understand
+    }
+    // The premium-model weekly window, whatever Anthropic calls it this month.
+    let extra = obj
+        .iter()
+        .filter(|(k, o)| {
+            k.starts_with("seven_day_") && o.get("utilization").is_some_and(|u| u.is_number())
+        })
+        .max_by(|a, b| {
+            let u = |o: &Value| o.get("utilization").and_then(|x| x.as_f64()).unwrap_or(0.0);
+            u(a.1).total_cmp(&u(b.1))
+        });
+    let model_label = extra
+        .map(|(k, _)| {
+            let raw = k.trim_start_matches("seven_day_").replace('_', " ");
+            let mut c = raw.chars();
+            match c.next() {
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                None => String::new(),
+            }
+        })
+        .unwrap_or_default();
+    Some(UsageInfo {
+        found: true,
+        five_hour: win(obj.get("five_hour")),
+        seven_day: win(obj.get("seven_day")),
+        seven_day_model: win(extra.map(|(_, o)| o)),
+        model_label,
+        stale: false,
+    })
+}
+
+fn request_usage() -> Option<UsageInfo> {
+    let token = oauth_token()?;
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(10)))
         .build()
         .into();
-    let Ok(resp) = agent
+    // Non-2xx (notably 429) is an Err in ureq 3 — treated as a failed refresh, so
+    // the cached snapshot is kept instead of being blanked out.
+    let resp = agent
         .get("https://api.anthropic.com/api/oauth/usage")
         .header("Authorization", &format!("Bearer {token}"))
         .header("anthropic-beta", "oauth-2025-04-20")
         .call()
-    else {
-        return none;
-    };
-    let Ok(txt) = resp.into_body().read_to_string() else {
-        return none;
-    };
-    let Ok(v) = serde_json::from_str::<Value>(&txt) else {
-        return none;
-    };
-    let win = |k: &str| {
-        let o = v.get(k);
-        UsageWindow {
-            utilization: o
-                .and_then(|o| o.get("utilization"))
-                .and_then(|x| x.as_f64())
-                .unwrap_or(0.0),
-            resets_at: o
-                .and_then(|o| o.get("resets_at"))
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string(),
+        .ok()?;
+    let txt = resp.into_body().read_to_string().ok()?;
+    parse_usage(&serde_json::from_str::<Value>(&txt).ok()?)
+}
+
+/// Last good snapshot + how hard we're allowed to hit the API.
+///
+/// `/api/oauth/usage` rate-limits aggressively (429 even at ~1 req/min, since the
+/// Claude Code CLI polls the same endpoint for the same account). Before this
+/// cache every 429 blanked the widget — that's the "sometimes no data" flicker.
+struct UsageCache {
+    data: Option<UsageInfo>,
+    /// When `data` was fetched.
+    at: Option<std::time::Instant>,
+    /// Don't call the API again before this (exponential backoff after failures).
+    next_try: Option<std::time::Instant>,
+    fails: u32,
+}
+
+static USAGE_CACHE: std::sync::Mutex<UsageCache> = std::sync::Mutex::new(UsageCache {
+    data: None,
+    at: None,
+    next_try: None,
+    fails: 0,
+});
+
+/// Serve the cache without touching the network for this long.
+const USAGE_FRESH: std::time::Duration = std::time::Duration::from_secs(120);
+/// Past this age the snapshot is flagged `stale` (still shown, just marked).
+const USAGE_STALE: std::time::Duration = std::time::Duration::from_secs(900);
+
+/// A cached snapshot, flagged stale once it gets old. `None` when nothing was
+/// ever fetched successfully.
+fn cached(c: &UsageCache) -> Option<UsageInfo> {
+    let (d, at) = (c.data.as_ref()?, c.at?);
+    let mut d = d.clone();
+    d.stale = at.elapsed() > USAGE_STALE;
+    Some(d)
+}
+
+fn fetch_usage() -> UsageInfo {
+    {
+        let c = USAGE_CACHE.lock().unwrap();
+        let fresh = c.at.is_some_and(|at| at.elapsed() < USAGE_FRESH);
+        let backing_off = c
+            .next_try
+            .is_some_and(|t| std::time::Instant::now() < t);
+        if fresh || backing_off {
+            // Backing off with nothing cached yet → empty, but still no API call.
+            return cached(&c).unwrap_or_default();
         }
-    };
-    UsageInfo {
-        found: v.get("five_hour").is_some(),
-        five_hour: win("five_hour"),
-        seven_day: win("seven_day"),
+    }
+    match request_usage() {
+        Some(u) => {
+            let mut c = USAGE_CACHE.lock().unwrap();
+            c.data = Some(u.clone());
+            c.at = Some(std::time::Instant::now());
+            c.next_try = None;
+            c.fails = 0;
+            u
+        }
+        None => {
+            let mut c = USAGE_CACHE.lock().unwrap();
+            c.fails = c.fails.saturating_add(1).min(5);
+            // 1, 2, 4, 8, 16 minutes.
+            let wait = std::time::Duration::from_secs(60 << (c.fails - 1));
+            c.next_try = Some(std::time::Instant::now() + wait);
+            cached(&c).unwrap_or_default()
+        }
     }
 }
 
@@ -499,5 +599,37 @@ mod tests {
         assert_eq!(last_plan_in_file(&path), None);
         assert_eq!(last_plan_in_file(&dir.join("missing.jsonl")), None);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn parses_three_windows() {
+        let v = serde_json::json!({
+            "five_hour": { "utilization": 16.0, "resets_at": "2026-07-14T12:00:00Z" },
+            "seven_day": { "utilization": 34.0, "resets_at": "2026-07-18T03:00:00Z" },
+            "seven_day_fable": { "utilization": 45.0, "resets_at": "2026-07-18T03:00:00Z" },
+        });
+        let u = parse_usage(&v).unwrap();
+        assert!(u.found && !u.stale);
+        assert_eq!(u.five_hour.utilization, 16.0);
+        assert_eq!(u.seven_day.utilization, 34.0);
+        assert_eq!(u.seven_day_model.utilization, 45.0);
+        assert_eq!(u.model_label, "Fable");
+    }
+
+    #[test]
+    fn parses_without_model_window() {
+        let v = serde_json::json!({ "five_hour": { "utilization": 5.0 } });
+        let u = parse_usage(&v).unwrap();
+        assert!(u.model_label.is_empty());
+        assert_eq!(u.seven_day_model.utilization, 0.0);
+        assert_eq!(u.five_hour.resets_at, "");
+    }
+
+    #[test]
+    fn rejects_error_payload() {
+        // A 429 body must not be mistaken for "0% used" — it has to stay None so
+        // the caller keeps serving the cached snapshot.
+        let v = serde_json::json!({ "error": { "type": "rate_limit_error" } });
+        assert!(parse_usage(&v).is_none());
     }
 }

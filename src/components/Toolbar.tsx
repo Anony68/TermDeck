@@ -68,7 +68,9 @@ function UsageWidget() {
       if (usageCursor) void cursorUsage().then((u) => alive && setCursor(u));
     };
     load();
-    const iv = window.setInterval(load, 60_000);
+    // Claude's usage endpoint rate-limits hard (the CLI polls it for the same
+    // account), so poll gently; claude.rs caches and backs off on top of this.
+    const iv = window.setInterval(load, 180_000);
     return () => {
       alive = false;
       window.clearInterval(iv);
@@ -99,25 +101,42 @@ function UsageWidget() {
   let tip: string;
 
   if (active === 'claude' && claude) {
+    // The three windows the web /usage page shows: current session, weekly
+    // (all models) and — on plans that have one — weekly for the premium model.
     const p5 = Math.round(claude.fiveHour.utilization);
     const p7 = Math.round(claude.sevenDay.utilization);
+    const pm = Math.round(claude.sevenDayModel.utilization);
+    const hasModel = !!claude.modelLabel;
     tip =
       `${t('toolbar.usageTitle')}\n` +
       `${t('toolbar.usageSession')}: ${p5}% — ${t('toolbar.usageResetAt', { t: fmtTime(claude.fiveHour.resetsAt) })}\n` +
-      `${t('toolbar.usageWeek')}: ${p7}% — ${t('toolbar.usageResetAt', { t: fmtTime(claude.sevenDay.resetsAt) })}`;
+      `${t('toolbar.usageWeek')}: ${p7}% — ${t('toolbar.usageResetAt', { t: fmtTime(claude.sevenDay.resetsAt) })}` +
+      (hasModel
+        ? `\n${t('toolbar.usageWeekModel', { m: claude.modelLabel })}: ${pm}% — ${t('toolbar.usageResetAt', { t: fmtTime(claude.sevenDayModel.resetsAt) })}`
+        : '') +
+      (claude.stale ? `\n${t('toolbar.usageStale')}` : '');
+    const sep = <span style={{ width: 1, height: 12, background: 'var(--border-2)' }} />;
     body = (
-      <>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, opacity: claude.stale ? 0.55 : 1 }}>
         <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>5h</span>
         <UsageBar pct={p5} />
         <span style={{ color: usageColor(p5) }}>{p5}%</span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--text-muted)', fontWeight: 400 }}>
           <IconRefresh size={11} /> {fmtTime(claude.fiveHour.resetsAt)}
         </span>
-        <span style={{ width: 1, height: 12, background: 'var(--border-2)' }} />
+        {sep}
         <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>7d</span>
         <UsageBar pct={p7} />
         <span style={{ color: usageColor(p7) }}>{p7}%</span>
-      </>
+        {hasModel && (
+          <>
+            {sep}
+            <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{claude.modelLabel}</span>
+            <UsageBar pct={pm} />
+            <span style={{ color: usageColor(pm) }}>{pm}%</span>
+          </>
+        )}
+      </span>
     );
   } else if (active === 'cursor' && cursor) {
     const u = cursor;

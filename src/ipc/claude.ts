@@ -52,8 +52,16 @@ export interface ClaudeUsageWindow {
 }
 export interface ClaudeUsage {
   found: boolean;
+  /** "Current session" on the web — the 5-hour window. */
   fiveHour: ClaudeUsageWindow;
+  /** Weekly limit, all models. */
   sevenDay: ClaudeUsageWindow;
+  /** Weekly limit for the plan's premium model; only meaningful if modelLabel is set. */
+  sevenDayModel: ClaudeUsageWindow;
+  /** Display name of the premium model ("Opus", "Fable"); '' when the API sends no such window. */
+  modelLabel: string;
+  /** Snapshot came from cache because the last refresh failed (rate limit / offline). */
+  stale: boolean;
 }
 
 export async function claudeUsage(): Promise<ClaudeUsage | null> {
