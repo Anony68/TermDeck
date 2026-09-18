@@ -56,11 +56,14 @@ pub enum StoreError {
 }
 
 pub trait Store: Send + Sync {
-    /// Create an account. `auth_hash` is the PHC string of the client's auth secret.
-    fn create_account(&self, email: &str, auth_hash: String, crypto: AccountCrypto)
+    /// Create an account. `auth_hash` / `recovery_auth_hash` are PHC strings of the
+    /// client's auth secret and recovery auth secret respectively.
+    fn create_account(&self, email: &str, auth_hash: String, recovery_auth_hash: String, crypto: AccountCrypto)
         -> Result<AccountId, StoreError>;
     /// Look up an account by email, returning its id + stored auth hash for verification.
     fn account_auth(&self, email: &str) -> Option<(AccountId, String)>;
+    /// By email: id + recovery-auth hash + crypto material (for the recovery flow).
+    fn account_recovery(&self, email: &str) -> Option<(AccountId, String, AccountCrypto)>;
     /// The crypto material to hand back to a client after a successful login.
     fn account_crypto(&self, id: &AccountId) -> Option<AccountCrypto>;
     /// Replace auth hash + protected-key material (change password / recover complete).
@@ -112,6 +115,7 @@ fn token_hash(token: &str) -> String {
 struct AccountRow {
     id: AccountId,
     auth_hash: String,
+    recovery_auth_hash: String,
     crypto: AccountCrypto,
     seq: i64,
     records: HashMap<String, Record>,
@@ -155,7 +159,7 @@ fn norm_email(email: &str) -> String {
 }
 
 impl Store for InMemoryStore {
-    fn create_account(&self, email: &str, auth_hash: String, crypto: AccountCrypto)
+    fn create_account(&self, email: &str, auth_hash: String, recovery_auth_hash: String, crypto: AccountCrypto)
         -> Result<AccountId, StoreError> {
         let email = norm_email(email);
         let mut g = self.inner.lock().unwrap();
@@ -166,7 +170,7 @@ impl Store for InMemoryStore {
         g.by_email.insert(email, id.clone());
         g.accounts.insert(
             id.clone(),
-            AccountRow { id: id.clone(), auth_hash, crypto, seq: 0, records: HashMap::new() },
+            AccountRow { id: id.clone(), auth_hash, recovery_auth_hash, crypto, seq: 0, records: HashMap::new() },
         );
         Ok(id)
     }
@@ -177,6 +181,14 @@ impl Store for InMemoryStore {
         let id = g.by_email.get(&email)?;
         let row = g.accounts.get(id)?;
         Some((row.id.clone(), row.auth_hash.clone()))
+    }
+
+    fn account_recovery(&self, email: &str) -> Option<(AccountId, String, AccountCrypto)> {
+        let email = norm_email(email);
+        let g = self.inner.lock().unwrap();
+        let id = g.by_email.get(&email)?;
+        let row = g.accounts.get(id)?;
+        Some((row.id.clone(), row.recovery_auth_hash.clone(), row.crypto.clone()))
     }
 
     fn account_crypto(&self, id: &AccountId) -> Option<AccountCrypto> {
@@ -253,14 +265,14 @@ mod tests {
     #[test]
     fn duplicate_email_rejected() {
         let s = InMemoryStore::new();
-        s.create_account("A@x.com", "h".into(), crypto()).unwrap();
-        assert_eq!(s.create_account("a@x.com", "h".into(), crypto()), Err(StoreError::EmailTaken));
+        s.create_account("A@x.com", "h".into(), "rh".into(), crypto()).unwrap();
+        assert_eq!(s.create_account("a@x.com", "h".into(), "rh".into(), crypto()), Err(StoreError::EmailTaken));
     }
 
     #[test]
     fn sessions_resolve() {
         let s = InMemoryStore::new();
-        let id = s.create_account("u@x.com", "h".into(), crypto()).unwrap();
+        let id = s.create_account("u@x.com", "h".into(), "rh".into(), crypto()).unwrap();
         let tok = s.create_session(&id);
         assert_eq!(s.resolve_session(&tok).as_ref(), Some(&id));
         assert_eq!(s.resolve_session("nope"), None);
@@ -269,7 +281,7 @@ mod tests {
     #[test]
     fn push_assigns_increasing_seq_and_pull_is_incremental() {
         let s = InMemoryStore::new();
-        let id = s.create_account("u@x.com", "h".into(), crypto()).unwrap();
+        let id = s.create_account("u@x.com", "h".into(), "rh".into(), crypto()).unwrap();
         let cur = s.push(&id, vec![change("a", "01"), change("b", "02")]);
         assert_eq!(cur, 2);
         let (recs, cursor) = s.pull(&id, 0);
@@ -283,7 +295,7 @@ mod tests {
     #[test]
     fn last_write_wins_on_same_record() {
         let s = InMemoryStore::new();
-        let id = s.create_account("u@x.com", "h".into(), crypto()).unwrap();
+        let id = s.create_account("u@x.com", "h".into(), "rh".into(), crypto()).unwrap();
         s.push(&id, vec![change("a", "1111")]);
         s.push(&id, vec![change("a", "2222")]); // later upload wins
         let (recs, cursor) = s.pull(&id, 0);
@@ -295,7 +307,7 @@ mod tests {
     #[test]
     fn tombstone_propagates() {
         let s = InMemoryStore::new();
-        let id = s.create_account("u@x.com", "h".into(), crypto()).unwrap();
+        let id = s.create_account("u@x.com", "h".into(), "rh".into(), crypto()).unwrap();
         s.push(&id, vec![change("a", "01")]);
         s.push(&id, vec![RecordChange { id: "a".into(), ciphertext_hex: "".into(), nonce_hex: "".into(), deleted: true }]);
         let (recs, _) = s.pull(&id, 0);

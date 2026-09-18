@@ -26,6 +26,8 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/register", post(register))
         .route("/v1/auth/login", post(login))
         .route("/v1/auth/change-password", post(change_password))
+        .route("/v1/auth/recover-begin", post(recover_begin))
+        .route("/v1/auth/recover-complete", post(recover_complete))
         .route("/v1/sync", get(sync_pull).post(sync_push))
         .with_state(state)
 }
@@ -58,6 +60,8 @@ fn require_auth(state: &AppState, headers: &HeaderMap) -> ApiResult<AccountId> {
 struct RegisterReq {
     email: String,
     auth_secret_hex: String,
+    /// Auth secret derived from the recovery code; proves possession during recovery.
+    recovery_auth_secret_hex: String,
     #[serde(flatten)]
     crypto: AccountCrypto,
 }
@@ -67,13 +71,14 @@ struct TokenResp {
 }
 
 async fn register(State(state): State<AppState>, Json(req): Json<RegisterReq>) -> ApiResult<Json<TokenResp>> {
-    if req.email.trim().is_empty() || req.auth_secret_hex.is_empty() {
-        return Err(ApiError(StatusCode::BAD_REQUEST, "email and auth_secret required"));
+    if req.email.trim().is_empty() || req.auth_secret_hex.is_empty() || req.recovery_auth_secret_hex.is_empty() {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "email, auth_secret and recovery_auth_secret required"));
     }
     let hash = hash_auth_secret(&req.auth_secret_hex);
+    let recovery_hash = hash_auth_secret(&req.recovery_auth_secret_hex);
     let id = state
         .store
-        .create_account(&req.email, hash, req.crypto)
+        .create_account(&req.email, hash, recovery_hash, req.crypto)
         .map_err(|e| match e {
             StoreError::EmailTaken => ApiError(StatusCode::CONFLICT, "email already registered"),
             _ => ApiError(StatusCode::INTERNAL_SERVER_ERROR, "store error"),
@@ -127,6 +132,57 @@ async fn change_password(
         .update_auth(&id, hash, req.crypto)
         .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "store error"))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ---- recovery ----
+// Two-step: `begin` hands back the (E2EE) recovery material for an email so the client can
+// derive the recovery key from the user's recovery code and unwrap the vault key locally;
+// `complete` verifies possession of the recovery code (via the recovery auth secret) and
+// swaps in a fresh master-password protected key. The vault key itself never changes, so
+// records stay readable.
+
+#[derive(Deserialize)]
+struct RecoverBeginReq {
+    email: String,
+}
+#[derive(Serialize)]
+struct RecoverBeginResp {
+    #[serde(flatten)]
+    crypto: AccountCrypto,
+}
+
+async fn recover_begin(State(state): State<AppState>, Json(req): Json<RecoverBeginReq>) -> ApiResult<Json<RecoverBeginResp>> {
+    // Returns only E2EE-encrypted material + public salts; useless without the recovery code.
+    let (_, _, crypto) = state
+        .store
+        .account_recovery(&req.email)
+        .ok_or(ApiError(StatusCode::NOT_FOUND, "no such account"))?;
+    Ok(Json(RecoverBeginResp { crypto }))
+}
+
+#[derive(Deserialize)]
+struct RecoverCompleteReq {
+    email: String,
+    recovery_auth_secret_hex: String,
+    new_auth_secret_hex: String,
+    #[serde(flatten)]
+    crypto: AccountCrypto,
+}
+
+async fn recover_complete(State(state): State<AppState>, Json(req): Json<RecoverCompleteReq>) -> ApiResult<Json<TokenResp>> {
+    let (id, recovery_hash, _) = state
+        .store
+        .account_recovery(&req.email)
+        .ok_or(ApiError(StatusCode::UNAUTHORIZED, "invalid recovery"))?;
+    if !verify_auth_secret(&req.recovery_auth_secret_hex, &recovery_hash) {
+        return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid recovery code"));
+    }
+    let hash = hash_auth_secret(&req.new_auth_secret_hex);
+    state
+        .store
+        .update_auth(&id, hash, req.crypto)
+        .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "store error"))?;
+    Ok(Json(TokenResp { token: state.store.create_session(&id) }))
 }
 
 // ---- sync ----
@@ -204,7 +260,7 @@ mod tests {
 
     fn register_body(email: &str, auth: &str) -> serde_json::Value {
         serde_json::json!({
-            "email": email, "auth_secret_hex": auth,
+            "email": email, "auth_secret_hex": auth, "recovery_auth_secret_hex": "rec-a92833f2",
             "kdf_version": 1, "salt_hex": "07", "argon_params": {"m":65536,"t":3,"p":4},
             "protected_vk_hex": "bc10", "protected_vk_nonce_hex": "0101",
             "recovery_salt_hex": "09", "recovery_protected_vk_hex": "5b39", "recovery_protected_vk_nonce_hex": "0101"
@@ -275,5 +331,43 @@ mod tests {
             serde_json::json!({"email":"me@x.com","auth_secret_hex":"cafef00d"})).await;
         assert_eq!(st, StatusCode::OK);
         assert_eq!(body["protected_vk_hex"], "beef", "re-wrapped VK is returned");
+    }
+
+    #[tokio::test]
+    async fn recovery_flow() {
+        let app = app();
+        let (_, body) = send(&app, "POST", "/v1/auth/register", None, register_body("r@x.com", "aaaa")).await;
+        assert!(body["token"].is_string());
+
+        // begin: hands back the E2EE recovery material (for any email — blob is useless
+        // without the recovery code).
+        let (st, body) = send(&app, "POST", "/v1/auth/recover-begin", None,
+            serde_json::json!({"email":"r@x.com"})).await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(body["recovery_protected_vk_hex"], "5b39");
+
+        // complete with the WRONG recovery secret → 401
+        let (st, _) = send(&app, "POST", "/v1/auth/recover-complete", None, serde_json::json!({
+            "email":"r@x.com", "recovery_auth_secret_hex":"WRONG", "new_auth_secret_hex":"newnew",
+            "kdf_version":1, "salt_hex":"bb", "argon_params":{},
+            "protected_vk_hex":"d00d", "protected_vk_nonce_hex":"0101",
+            "recovery_salt_hex":"09", "recovery_protected_vk_hex":"5b39", "recovery_protected_vk_nonce_hex":"0101"
+        })).await;
+        assert_eq!(st, StatusCode::UNAUTHORIZED);
+
+        // complete with the correct recovery secret → new token, new password works
+        let (st, body) = send(&app, "POST", "/v1/auth/recover-complete", None, serde_json::json!({
+            "email":"r@x.com", "recovery_auth_secret_hex":"rec-a92833f2", "new_auth_secret_hex":"newnew",
+            "kdf_version":1, "salt_hex":"bb", "argon_params":{},
+            "protected_vk_hex":"d00d", "protected_vk_nonce_hex":"0101",
+            "recovery_salt_hex":"09", "recovery_protected_vk_hex":"5b39", "recovery_protected_vk_nonce_hex":"0101"
+        })).await;
+        assert_eq!(st, StatusCode::OK);
+        assert!(body["token"].is_string());
+
+        let (st, body) = send(&app, "POST", "/v1/auth/login", None,
+            serde_json::json!({"email":"r@x.com","auth_secret_hex":"newnew"})).await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(body["protected_vk_hex"], "d00d");
     }
 }
