@@ -1,0 +1,19 @@
+{
+  "kdf_version": 1,
+  "argon": { "m_cost": 65536, "t_cost": 3, "p_cost": 4 },
+  "password": "correct horse battery staple",
+  "salt_hex": "07070707070707070707070707070707",
+  "master_key_hex": "0b167e20ffb8a31f75eb3e471872ba0a5747d56ec494db5becb07108141bff24",
+  "kek_hex": "c3c3018631cb1b057664c07321e80187f00f9ea13a4d0c994d5934f1e639292e",
+  "auth_secret_hex": "a92833f2c61cc1032eb2204914145e0c5ccbbd6a4aa6eecc20a5e4981dbd6010",
+  "vk_hex": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+  "kek_nonce_hex": "010101010101010101010101010101010101010101010101",
+  "protected_vk_hex": "bc10ce6c80f73f03b6c49669a8cff9fcbe2d541ff420b8c37103c38acde5ebffab05da8c59056d21c61cded8cda5028d",
+  "record_plaintext": "{\"type\":\"host\",\"host\":\"203.0.113.7\",\"port\":22,\"user\":\"root\",\"secret\":\"hunter2\"}",
+  "record_nonce_hex": "020202020202020202020202020202020202020202020202",
+  "record_ciphertext_hex": "8a680aeb69af9d3cfc6aaf71fbef922dabe9f9bd19137ffd81fb6781dff0fe63abedfbce271046c16054802362c2276c3ba9834328d35e09e36310403dbab9b022d7b2abf892960414a072a15582ae9ccd4559fcb2de5ec2f9c6f6852dc827",
+  "recovery_code": "ABCD-EF12-GH34-JK56-MN78-PQ90",
+  "recovery_salt_hex": "09090909090909090909090909090909",
+  "recovery_key_hex": "76a466388e65f3d86f45d0833f007f18a4c3e70118c97547b5d36fa7c64ebd53",
+  "recovery_protected_vk_hex": "5b398ed24bfa65a3e744fc6a8e9125c5c599581a52687430634685e4d2b8dc78ddbced7d729f69561612cf10c47cbf2b"
+}

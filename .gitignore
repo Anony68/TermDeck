@@ -30,3 +30,8 @@ target/
 
 # SDD scratch (progress ledger, task briefs/reports, review diffs)
 .superpowers/
+
+# Gradle / Android (the signing keystore is intentionally committed — see android/)
+.gradle/
+build/
+android/local.properties
