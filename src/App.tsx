@@ -8,6 +8,7 @@ import { HostDetail } from './components/HostDetail';
 import { StatusBar } from './components/StatusBar';
 import { TerminalLayer } from './components/TerminalLayer';
 import { AddHostDialog } from './dialogs/AddHostDialog';
+import { AccountDialog } from './dialogs/AccountDialog';
 import { SettingsWindow } from './settings/SettingsWindow';
 import { useT } from './i18n';
 import { onSshStatus } from './ipc/ssh';
@@ -21,6 +22,7 @@ export default function App() {
   const addHostOpen = useStore((s) => s.ui.addHostOpen);
   const editHostId = useStore((s) => s.ui.editHostId);
   const settingsOpen = useStore((s) => s.ui.settingsOpen);
+  const accountOpen = useStore((s) => s.ui.accountOpen);
 
   // App-wide zoom (font size for the whole UI).
   useEffect(() => {
@@ -46,6 +48,15 @@ export default function App() {
   // Edit-in-place auto-upload pump: wired once here (survives FileBrowser unmounts).
   useEffect(() => {
     wireEditUploads();
+  }, []);
+
+  // Periodic cloud sync while the vault is unlocked (pull others' changes).
+  useEffect(() => {
+    const iv = window.setInterval(() => {
+      const s = useStore.getState();
+      if (s.cloud.unlocked && !s.cloud.syncing) void s.cloudSync();
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(iv);
   }, []);
 
   // Block webview reload (F5 / Ctrl+R) — a reload would kill every SSH session.
@@ -113,6 +124,7 @@ export default function App() {
       <StatusBar />
       <TerminalLayer />
       {(addHostOpen || editHostId) && <AddHostDialog />}
+      {accountOpen && <AccountDialog />}
       {settingsOpen && <SettingsWindow />}
     </div>
   );

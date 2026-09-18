@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useStore, termId } from '../state/store';
 import { PaneBadge } from './ShellBadge';
 import { ContextMenu, type MenuItem } from './ContextMenu';
-import { IconPlus, IconSearch, IconSettings } from './icons';
+import { IconPlus, IconSearch, IconSettings, IconCloud } from './icons';
 import { useT } from '../i18n';
 import type { Host } from '../types';
 
@@ -74,6 +74,25 @@ function HostRow({ host }: { host: Host }) {
   );
 }
 
+/** Cloud account button + status dot (grey = signed out, amber = locked, green = unlocked). */
+function AccountButton() {
+  const cloud = useStore((s) => s.cloud);
+  const openAccount = useStore((s) => s.openAccount);
+  const t = useT();
+  const color = !cloud.signedIn
+    ? 'var(--text-muted)'
+    : cloud.unlocked
+    ? 'var(--accent, #2dd4a7)'
+    : 'var(--sh-wsl, #e5b34a)';
+  const title = !cloud.signedIn ? t('account.title') : cloud.unlocked ? t('account.unlocked') : t('account.locked');
+  return (
+    <span className="icon-btn" title={title} onClick={openAccount} style={{ position: 'relative' }}>
+      <IconCloud size={15} />
+      <span style={{ position: 'absolute', right: 2, bottom: 2, width: 7, height: 7, borderRadius: '50%', background: color, border: '1px solid var(--bg-panel)' }} />
+    </span>
+  );
+}
+
 export function Sidebar() {
   const hosts = useStore((s) => s.hosts);
   const openAddHost = useStore((s) => s.openAddHost);
@@ -107,6 +126,7 @@ export function Sidebar() {
         <span style={{ font: '600 10.5px var(--font-ui)', color: 'var(--text-muted)', letterSpacing: '0.08em', flex: 1 }}>
           {t('sidebar.title')}
         </span>
+        <AccountButton />
         <span className="icon-btn" title={t('toolbar.settings')} onClick={() => openSettings()}>
           <IconSettings size={15} />
         </span>

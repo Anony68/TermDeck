@@ -566,6 +566,34 @@ const T = {
   'status.hosts': { vi: '{count} VPS', en: '{count} VPS' },
   'set.keys.newHost': { vi: 'Thêm VPS', en: 'Add VPS' },
   'set.keys.reloadPanel': { vi: 'Tải lại bảng tệp', en: 'Reload file panel' },
+
+  // ----- cloud account / sync -----
+  'account.title': { vi: 'Tài khoản đồng bộ', en: 'Sync account' },
+  'account.button': { vi: 'Tài khoản', en: 'Account' },
+  'account.signin': { vi: 'Đăng nhập', en: 'Sign in' },
+  'account.register': { vi: 'Đăng ký', en: 'Register' },
+  'account.recover': { vi: 'Khôi phục', en: 'Recover' },
+  'account.serverUrl': { vi: 'Máy chủ đồng bộ', en: 'Sync server' },
+  'account.email': { vi: 'Email', en: 'Email' },
+  'account.masterPassword': { vi: 'Mật khẩu chính', en: 'Master password' },
+  'account.newMasterPassword': { vi: 'Mật khẩu chính mới', en: 'New master password' },
+  'account.min8': { vi: '(tối thiểu 8 ký tự)', en: '(min 8 chars)' },
+  'account.unlock': { vi: 'Mở khóa', en: 'Unlock' },
+  'account.lock': { vi: 'Khóa', en: 'Lock' },
+  'account.signOut': { vi: 'Đăng xuất', en: 'Sign out' },
+  'account.syncNow': { vi: 'Đồng bộ ngay', en: 'Sync now' },
+  'account.changePassword': { vi: 'Đổi mật khẩu', en: 'Change password' },
+  'account.lastSync': { vi: 'Đồng bộ lần cuối', en: 'Last sync' },
+  'account.never': { vi: 'chưa', en: 'never' },
+  'account.locked': { vi: 'Đã khóa', en: 'Locked' },
+  'account.unlocked': { vi: 'Đã mở khóa', en: 'Unlocked' },
+  'account.status.syncing': { vi: 'đang đồng bộ…', en: 'syncing…' },
+  'account.recoveryCode': { vi: 'Mã khôi phục', en: 'Recovery code' },
+  'account.recoveryHint': {
+    vi: 'Lưu mã này ở nơi an toàn. Đây là cách DUY NHẤT lấy lại vault nếu quên mật khẩu chính — mất cả hai là mất dữ liệu vĩnh viễn.',
+    en: 'Save this somewhere safe. It is the ONLY way to recover your vault if you forget the master password — lose both and the data is gone for good.',
+  },
+  'account.recoverySaved': { vi: 'Tôi đã lưu mã', en: "I've saved the code" },
 } satisfies Record<string, Entry>;
 
 export type TKey = keyof typeof T;

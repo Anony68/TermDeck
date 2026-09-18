@@ -38,4 +38,5 @@ export {
   ArrowRight as IconArrowRight,
   ArrowLeft as IconArrowLeft,
   Pencil as IconPencil,
+  Cloud as IconCloud,
 } from 'lucide-react';

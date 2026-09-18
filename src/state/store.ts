@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type {
+  AccountMaterial,
+  CloudPersisted,
   Host,
   Pane,
   PaneStatus,
@@ -10,6 +12,18 @@ import type {
 import { loadPersisted, savePersisted } from '../ipc/persist';
 import { killSession } from '../ipc/session';
 import { secretCopy, secretDelete } from '../ipc/ssh';
+import {
+  cloudRegister as ipcRegister,
+  cloudLoginFetch,
+  cloudUnlock as ipcUnlock,
+  cloudLock as ipcLock,
+  cloudChangePassword as ipcChangePassword,
+  cloudRecoverComplete,
+  cloudPush,
+  cloudPull,
+  hostToRecordJson,
+  recordJsonToHost,
+} from '../ipc/cloud';
 import { stopEditsForPane } from './edits';
 
 const uid = () =>
@@ -51,6 +65,31 @@ export interface NewHostInput {
   id?: string;
 }
 
+/** Cloud-sync runtime state (persisted subset + live flags). */
+interface CloudRuntime extends CloudPersisted {
+  /** An account exists (registered/logged in on this device before). */
+  signedIn: boolean;
+  /** The vault is unlocked in Rust this session (VK held in memory). */
+  unlocked: boolean;
+  syncing: boolean;
+  lastSyncAt: number | null;
+  lastError: string | null;
+}
+
+const EMPTY_CLOUD: CloudRuntime = {
+  baseUrl: '',
+  email: '',
+  account: null,
+  cursor: 0,
+  dirty: [],
+  pendingDeletes: [],
+  signedIn: false,
+  unlocked: false,
+  syncing: false,
+  lastSyncAt: null,
+  lastError: null,
+};
+
 interface AppState {
   hosts: Host[];
   activeHostId: string | null;
@@ -65,16 +104,35 @@ interface AppState {
   sshStatus: Record<string, { state: string; attempt: number }>;
   focusedPaneId: string | null;
 
+  cloud: CloudRuntime;
+
   ui: {
     addHostOpen: boolean;
     settingsOpen: boolean;
     settingsSection: string | null;
     editHostId: string | null;
+    accountOpen: boolean;
   };
   hydrated: boolean;
   savedAt: number | null;
 
   hydrate: () => Promise<void>;
+
+  // ---- cloud sync ----
+  /** Register a new account; returns the one-time recovery code to show the user. */
+  cloudRegister: (baseUrl: string, email: string, masterPassword: string) => Promise<string>;
+  /** Unlock (and sign in) with the master password; then sync. */
+  cloudUnlock: (baseUrl: string, email: string, masterPassword: string) => Promise<void>;
+  /** Recover with the recovery code + set a new master password; then sync. */
+  cloudRecover: (baseUrl: string, email: string, recoveryCode: string, newMasterPassword: string) => Promise<void>;
+  cloudChangePassword: (newMasterPassword: string) => Promise<void>;
+  cloudLock: () => void;
+  /** Forget the account on this device (keeps local hosts). */
+  cloudSignOut: () => void;
+  /** Push local changes then pull remote ones and merge (no-op if locked). */
+  cloudSync: () => Promise<void>;
+  openAccount: () => void;
+  closeAccount: () => void;
 
   /** Returns the new host's id (so callers can attach a secret to `{id}:term`). */
   addHost: (input: NewHostInput) => string;
@@ -113,18 +171,37 @@ interface AppState {
 const hostLabel = (h: { name?: string; ssh: SshConfig }) =>
   h.name?.trim() || `${h.ssh.user}@${h.ssh.host}`;
 
+const dedupe = (arr: string[]) => Array.from(new Set(arr));
+/** Mark a host changed locally (queues it for the next push). No-op if not signed in. */
+const withDirty = (c: CloudRuntime, id: string): CloudRuntime =>
+  c.signedIn ? { ...c, dirty: dedupe([...c.dirty, id]), pendingDeletes: c.pendingDeletes.filter((x) => x !== id) } : c;
+/** Mark a host deleted locally (queues a tombstone). No-op if not signed in. */
+const withDeleted = (c: CloudRuntime, id: string): CloudRuntime =>
+  c.signedIn ? { ...c, pendingDeletes: dedupe([...c.pendingDeletes, id]), dirty: c.dirty.filter((x) => x !== id) } : c;
+
 // ---- debounced persistence ----
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleSave(get: () => AppState) {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     const s = get();
+    const c = s.cloud;
     const persisted: PersistedState = {
       version: STORE_VERSION,
       hosts: s.hosts,
       activeHostId: s.activeHostId,
       settings: s.settings,
       recentKeys: s.recentKeys,
+      cloud: c.signedIn
+        ? {
+            baseUrl: c.baseUrl,
+            email: c.email,
+            account: c.account,
+            cursor: c.cursor,
+            dirty: c.dirty,
+            pendingDeletes: c.pendingDeletes,
+          }
+        : undefined,
     };
     void savePersisted(persisted).then(() => useStore.setState({ savedAt: Date.now() }));
   }, 400);
@@ -166,7 +243,8 @@ export const useStore = create<AppState>((set, get) => {
     runtime: {},
     sshStatus: {},
     focusedPaneId: null,
-    ui: { addHostOpen: false, settingsOpen: false, settingsSection: null, editHostId: null },
+    cloud: { ...EMPTY_CLOUD },
+    ui: { addHostOpen: false, settingsOpen: false, settingsSection: null, editHostId: null, accountOpen: false },
     hydrated: false,
     savedAt: null,
 
@@ -187,7 +265,13 @@ export const useStore = create<AppState>((set, get) => {
         hosts = migrateHosts(p); // v4 → v5 one-time upgrade
       }
 
-      set({ hosts, activeHostId, settings, recentKeys, hydrated: true });
+      // Cloud is restored signed-in-but-locked: hosts render from local cache; the
+      // user unlocks with the master password to sync + use secrets.
+      const cloud: CloudRuntime = p?.cloud
+        ? { ...EMPTY_CLOUD, ...p.cloud, signedIn: !!p.cloud.account, unlocked: false }
+        : { ...EMPTY_CLOUD };
+
+      set({ hosts, activeHostId, settings, recentKeys, cloud, hydrated: true });
     },
 
     addHost: (input) => {
@@ -198,7 +282,8 @@ export const useStore = create<AppState>((set, get) => {
         ssh: input.ssh,
         presetCommand: input.presetCommand?.trim() || undefined,
       };
-      commit({ hosts: [...get().hosts, host], activeHostId: id });
+      commit({ hosts: [...get().hosts, host], activeHostId: id, cloud: withDirty(get().cloud, id) });
+      if (get().cloud.unlocked) void get().cloudSync();
       return id;
     },
 
@@ -239,7 +324,8 @@ export const useStore = create<AppState>((set, get) => {
           pn.id === termId(id) ? { ...pn, presetCommand: patch.presetCommand } : pn
         );
       }
-      commit({ hosts: newHosts, panes: newPanes, runtime: rt });
+      commit({ hosts: newHosts, panes: newPanes, runtime: rt, cloud: withDirty(get().cloud, id) });
+      if (get().cloud.unlocked) void get().cloudSync();
     },
 
     removeHost: (id) => {
@@ -260,7 +346,9 @@ export const useStore = create<AppState>((set, get) => {
         activeHostId: activeHostId === id ? remaining[0]?.id ?? null : activeHostId,
         focusedPaneId:
           focusedPaneId === termId(id) || focusedPaneId === sftpId(id) ? null : focusedPaneId,
+        cloud: withDeleted(get().cloud, id),
       });
+      if (get().cloud.unlocked) void get().cloudSync();
     },
 
     setActiveHost: (id) => set({ activeHostId: id }),
@@ -403,6 +491,142 @@ export const useStore = create<AppState>((set, get) => {
         return false;
       }
     },
+
+    // ---- cloud sync ----
+
+    cloudRegister: async (baseUrl, email, masterPassword) => {
+      const res = await ipcRegister(baseUrl.trim(), email.trim(), masterPassword);
+      // First sign-in: every existing local host must be pushed to the new vault.
+      const dirty = get().hosts.map((h) => h.id);
+      commit({
+        cloud: {
+          ...EMPTY_CLOUD,
+          baseUrl: baseUrl.trim(),
+          email: email.trim(),
+          account: res.account,
+          signedIn: true,
+          unlocked: true,
+          dirty,
+        },
+      });
+      void get().cloudSync();
+      return res.recoveryCode;
+    },
+
+    cloudUnlock: async (baseUrl, email, masterPassword) => {
+      const bu = baseUrl.trim();
+      const em = email.trim();
+      // Use cached account material if present, else fetch it (fresh device).
+      let account: AccountMaterial | null = get().cloud.account;
+      if (!account || get().cloud.email !== em || get().cloud.baseUrl !== bu) {
+        account = await cloudLoginFetch(bu, em);
+      }
+      await ipcUnlock(bu, em, masterPassword, account);
+      commit({
+        cloud: {
+          ...get().cloud,
+          baseUrl: bu,
+          email: em,
+          account,
+          signedIn: true,
+          unlocked: true,
+          lastError: null,
+        },
+      });
+      void get().cloudSync();
+    },
+
+    cloudRecover: async (baseUrl, email, recoveryCode, newMasterPassword) => {
+      const res = await cloudRecoverComplete(baseUrl.trim(), email.trim(), recoveryCode.trim(), newMasterPassword);
+      const dirty = get().hosts.map((h) => h.id);
+      commit({
+        cloud: {
+          ...get().cloud,
+          baseUrl: baseUrl.trim(),
+          email: email.trim(),
+          account: res.account,
+          signedIn: true,
+          unlocked: true,
+          dirty,
+          lastError: null,
+        },
+      });
+      void get().cloudSync();
+    },
+
+    cloudChangePassword: async (newMasterPassword) => {
+      const account = await ipcChangePassword(newMasterPassword);
+      commit({ cloud: { ...get().cloud, account } });
+    },
+
+    cloudLock: () => {
+      void ipcLock();
+      set({ cloud: { ...get().cloud, unlocked: false } });
+    },
+
+    cloudSignOut: () => {
+      void ipcLock();
+      commit({ cloud: { ...EMPTY_CLOUD } });
+    },
+
+    cloudSync: async () => {
+      const c0 = get().cloud;
+      if (!c0.unlocked || c0.syncing) return;
+      set({ cloud: { ...get().cloud, syncing: true, lastError: null } });
+      try {
+        // 1) Push local changes (only dirty hosts + tombstones).
+        const hosts = get().hosts;
+        const pushRecords = [
+          ...c0.dirty
+            .map((id) => hosts.find((h) => h.id === id))
+            .filter((h): h is Host => !!h)
+            .map((h) => ({ id: h.id, hostJson: hostToRecordJson(h) })),
+          ...c0.pendingDeletes.map((id) => ({ id, deleted: true })),
+        ];
+        if (pushRecords.length) await cloudPush(pushRecords);
+
+        // 2) Pull everything since our cursor (includes our own pushes + others').
+        const res = await cloudPull(c0.cursor);
+        let hostList = get().hosts.slice();
+        for (const r of res.records) {
+          if (r.deleted) {
+            if (hostList.some((h) => h.id === r.id)) {
+              // Local-only removal (do NOT re-queue a tombstone).
+              killSession(termId(r.id));
+              killSession(sftpId(r.id));
+              secretDelete(termId(r.id));
+              secretDelete(sftpId(r.id));
+              stopEditsForPane(sftpId(r.id));
+              hostList = hostList.filter((h) => h.id !== r.id);
+            }
+            continue;
+          }
+          const host = recordJsonToHost(r.hostJson);
+          if (!host) continue;
+          const idx = hostList.findIndex((h) => h.id === host.id);
+          if (idx >= 0) hostList[idx] = host;
+          else hostList.push(host);
+        }
+        const activeStillExists = hostList.some((h) => h.id === get().activeHostId);
+        commit({
+          hosts: hostList,
+          activeHostId: activeStillExists ? get().activeHostId : hostList[0]?.id ?? null,
+          cloud: {
+            ...get().cloud,
+            cursor: res.cursor,
+            dirty: [],
+            pendingDeletes: [],
+            syncing: false,
+            lastSyncAt: Date.now(),
+          },
+        });
+      } catch (e) {
+        set({ cloud: { ...get().cloud, syncing: false, lastError: String(e) } });
+      }
+    },
+
+    openAccount: () => set({ ui: { ...get().ui, accountOpen: true } }),
+    closeAccount: () => set({ ui: { ...get().ui, accountOpen: false } }),
 
     openAddHost: () => set({ ui: { ...get().ui, addHostOpen: true, editHostId: null } }),
     closeAddHost: () => set({ ui: { ...get().ui, addHostOpen: false } }),

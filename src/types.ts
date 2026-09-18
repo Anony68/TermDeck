@@ -73,6 +73,29 @@ export interface Settings {
   editors: EditorApp[];
 }
 
+/** Non-secret account material cached so the vault can be unlocked offline after restart. */
+export interface AccountMaterial {
+  kdfVersion: number;
+  saltHex: string;
+  protectedVkHex: string;
+  protectedVkNonceHex: string;
+  recoverySaltHex: string;
+  recoveryProtectedVkHex: string;
+  recoveryProtectedVkNonceHex: string;
+}
+
+/** Persisted cloud-sync state (all non-secret: config, cached material, sync bookkeeping). */
+export interface CloudPersisted {
+  baseUrl: string;
+  email: string;
+  account: AccountMaterial | null;
+  cursor: number;
+  /** Host ids changed locally and not yet pushed. */
+  dirty: string[];
+  /** Host ids deleted locally and not yet pushed as tombstones. */
+  pendingDeletes: string[];
+}
+
 /** Persisted document. */
 export interface PersistedState {
   version: number;
@@ -81,4 +104,6 @@ export interface PersistedState {
   settings: Settings;
   /** Private-key files (.pem/…) the user has picked before, newest first. */
   recentKeys?: string[];
+  /** Cloud-sync config + bookkeeping (absent when never signed in). */
+  cloud?: CloudPersisted;
 }

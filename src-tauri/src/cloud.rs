@@ -283,23 +283,68 @@ pub fn cloud_status(state: State<SyncState>) -> CloudStatus {
 }
 
 // ---- record sync ----
+//
+// A vault record's plaintext is `{ "host": <non-secret host fields>, "secret": <password or
+// key passphrase>, "keyContent": <private key PEM> }`. The frontend only ever supplies and
+// receives the non-secret host fields; the secret + key material are read from / written to
+// the OS keyring and a managed key-file dir here in Rust, so plaintext secrets never enter
+// the webview.
+
+const KEYRING_SERVICE: &str = "TermDeck";
+
+fn keyring_entry(id: &str) -> R<keyring::Entry> {
+    keyring::Entry::new(KEYRING_SERVICE, &format!("ssh:{id}")).map_err(|e| e.to_string())
+}
+fn secret_get(id: &str) -> String {
+    keyring_entry(id).ok().and_then(|e| e.get_password().ok()).unwrap_or_default()
+}
+fn secret_put(id: &str, value: &str) -> R<()> {
+    let e = keyring_entry(id)?;
+    if value.is_empty() {
+        let _ = e.delete_credential();
+        Ok(())
+    } else {
+        e.set_password(value).map_err(|e| e.to_string())
+    }
+}
+
+/// Assemble the encrypted-record plaintext from its parts (pure; unit-tested).
+fn build_plaintext(host: &Value, secret: &str, key_content: &str) -> String {
+    json!({ "host": host, "secret": secret, "keyContent": key_content }).to_string()
+}
+/// Split a decrypted record back into (host, secret, keyContent) (pure; unit-tested).
+fn split_plaintext(pt: &str) -> R<(Value, String, String)> {
+    let v: Value = serde_json::from_str(pt).map_err(|e| e.to_string())?;
+    Ok((
+        v["host"].clone(),
+        v["secret"].as_str().unwrap_or_default().to_string(),
+        v["keyContent"].as_str().unwrap_or_default().to_string(),
+    ))
+}
+
+fn keys_dir(app: &tauri::AppHandle) -> R<std::path::PathBuf> {
+    use tauri::Manager;
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("vault-keys");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LocalRecord {
+pub struct PushHost {
     pub id: String,
-    /// Plaintext record JSON (host or key), empty when `deleted`.
+    /// The host's non-secret fields as JSON (empty when `deleted`).
     #[serde(default)]
-    pub json: String,
+    pub host_json: String,
     #[serde(default)]
     pub deleted: bool,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PulledRecord {
+pub struct PulledHost {
     pub id: String,
-    pub json: String,
+    pub host_json: String,
     pub deleted: bool,
     pub seq: i64,
 }
@@ -307,13 +352,13 @@ pub struct PulledRecord {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PullResult {
-    pub records: Vec<PulledRecord>,
+    pub records: Vec<PulledHost>,
     pub cursor: i64,
 }
 
-/// Encrypt each local record with VK and upload; returns the new cursor.
+/// Encrypt each host (meta + its keyring secret + key file) with VK and upload.
 #[tauri::command(rename_all = "camelCase")]
-pub fn cloud_push(state: State<SyncState>, records: Vec<LocalRecord>) -> R<i64> {
+pub fn cloud_push(state: State<SyncState>, records: Vec<PushHost>) -> R<i64> {
     let g = state.inner.lock().unwrap();
     let vk = g.vk.as_ref().ok_or("vault is locked")?;
     let token = g.token.as_deref().ok_or("not signed in")?;
@@ -323,34 +368,51 @@ pub fn cloud_push(state: State<SyncState>, records: Vec<LocalRecord>) -> R<i64> 
     for r in &records {
         if r.deleted {
             changes.push(json!({ "id": r.id, "ciphertext_hex": "", "nonce_hex": "", "deleted": true }));
-        } else {
-            let sealed = seal(vk, r.json.as_bytes()).map_err(|e| e.to_string())?;
-            let (ct, nonce) = sealed_to_hex(&sealed);
-            changes.push(json!({ "id": r.id, "ciphertext_hex": ct, "nonce_hex": nonce, "deleted": false }));
+            continue;
         }
+        let host: Value = serde_json::from_str(&r.host_json).map_err(|e| e.to_string())?;
+        let secret = secret_get(&format!("{}:term", r.id));
+        let key_content = if host["auth"] == "key" {
+            match host["keyPath"].as_str() {
+                Some(p) if !p.is_empty() => std::fs::read_to_string(p).unwrap_or_default(),
+                _ => String::new(),
+            }
+        } else {
+            String::new()
+        };
+        let sealed = seal(vk, build_plaintext(&host, &secret, &key_content).as_bytes())
+            .map_err(|e| e.to_string())?;
+        let (ct, nonce) = sealed_to_hex(&sealed);
+        changes.push(json!({ "id": r.id, "ciphertext_hex": ct, "nonce_hex": nonce, "deleted": false }));
     }
     let resp = post(&base_url, "/v1/sync", Some(token), &json!({ "changes": changes }))?;
     Ok(resp["cursor"].as_i64().unwrap_or(0))
 }
 
-/// Download records changed since `since`, decrypt with VK, return plaintext.
+/// Download records since `since`, decrypt with VK, restore secrets to the keyring + key
+/// files locally, and return only the non-secret host fields to the frontend.
 #[tauri::command(rename_all = "camelCase")]
-pub fn cloud_pull(state: State<SyncState>, since: i64) -> R<PullResult> {
+pub fn cloud_pull(app: tauri::AppHandle, state: State<SyncState>, since: i64) -> R<PullResult> {
+    let (vk_present, token, base_url) = {
+        let g = state.inner.lock().unwrap();
+        (g.vk.is_some(), g.token.clone(), g.base_url.clone())
+    };
+    if !vk_present {
+        return Err("vault is locked".into());
+    }
+    let token = token.ok_or("not signed in")?;
+    let resp = get(&base_url, &format!("/v1/sync?since={since}"), &token)?;
+    let cursor = resp["cursor"].as_i64().unwrap_or(0);
+
     let g = state.inner.lock().unwrap();
     let vk = g.vk.as_ref().ok_or("vault is locked")?;
-    let token = g.token.as_deref().ok_or("not signed in")?;
-    let base_url = g.base_url.clone();
-
-    let resp = get(&base_url, &format!("/v1/sync?since={since}"), token)?;
-    let cursor = resp["cursor"].as_i64().unwrap_or(0);
     let mut out = Vec::new();
     if let Some(arr) = resp["records"].as_array() {
         for r in arr {
             let id = r["id"].as_str().unwrap_or_default().to_string();
             let seq = r["seq"].as_i64().unwrap_or(0);
-            let deleted = r["deleted"].as_bool().unwrap_or(false);
-            if deleted {
-                out.push(PulledRecord { id, json: String::new(), deleted: true, seq });
+            if r["deleted"].as_bool().unwrap_or(false) {
+                out.push(PulledHost { id, host_json: String::new(), deleted: true, seq });
                 continue;
             }
             let sealed = hex_to_sealed(
@@ -358,8 +420,25 @@ pub fn cloud_pull(state: State<SyncState>, since: i64) -> R<PullResult> {
                 r["nonce_hex"].as_str().unwrap_or_default(),
             )?;
             let pt = open(vk, &sealed).map_err(|_| "decrypt failed (wrong vault key)".to_string())?;
-            let json = String::from_utf8(pt).map_err(|e| e.to_string())?;
-            out.push(PulledRecord { id, json, deleted: false, seq });
+            let pt = String::from_utf8(pt).map_err(|e| e.to_string())?;
+            let (mut host, secret, key_content) = split_plaintext(&pt)?;
+
+            // Restore the secret to the keyring for both derived sessions.
+            secret_put(&format!("{id}:term"), &secret)?;
+            secret_put(&format!("{id}:sftp"), &secret)?;
+
+            // Materialize a synced private key to a managed file and repoint keyPath.
+            if !key_content.is_empty() {
+                let path = keys_dir(&app)?.join(format!("{id}.pem"));
+                std::fs::write(&path, key_content.as_bytes()).map_err(|e| e.to_string())?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+                }
+                host["keyPath"] = json!(path.to_string_lossy());
+            }
+            out.push(PulledHost { id, host_json: host.to_string(), deleted: false, seq });
         }
     }
     Ok(PullResult { records: out, cursor })
@@ -484,5 +563,28 @@ mod tests {
         let (ct, nonce) = sealed_to_hex(&sealed);
         let back = hex_to_sealed(&ct, &nonce).unwrap();
         assert_eq!(open(&vk, &back).unwrap(), json.as_bytes());
+    }
+
+    #[test]
+    fn plaintext_build_split_roundtrip() {
+        let host = json!({"id":"h1","host":"1.2.3.4","user":"root","auth":"key","keyPath":"/tmp/k.pem"});
+        let pt = build_plaintext(&host, "hunter2", "-----BEGIN KEY-----\nabc\n-----END KEY-----");
+        let (h, secret, key) = split_plaintext(&pt).unwrap();
+        assert_eq!(h["host"], "1.2.3.4");
+        assert_eq!(secret, "hunter2");
+        assert!(key.contains("BEGIN KEY"));
+    }
+
+    #[test]
+    fn full_record_roundtrip_through_vk() {
+        let vk = generate_vault_key();
+        let host = json!({"id":"h1","host":"1.2.3.4","auth":"password"});
+        let pt = build_plaintext(&host, "s3cr3t", "");
+        let sealed = seal(&vk, pt.as_bytes()).unwrap();
+        let (ct, nonce) = sealed_to_hex(&sealed);
+        let opened = String::from_utf8(open(&vk, &hex_to_sealed(&ct, &nonce).unwrap()).unwrap()).unwrap();
+        let (h, secret, _key) = split_plaintext(&opened).unwrap();
+        assert_eq!(h["id"], "h1");
+        assert_eq!(secret, "s3cr3t");
     }
 }
