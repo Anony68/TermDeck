@@ -28,8 +28,11 @@ tauri-plugin-clipboard-manager = "2"
 # Updater downloads the installer; base64 also backs the SSH host-key fingerprint.
 ureq = "3.3.0"
 base64 = "0.22"
+hex = "0.4"
 keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
 notify = "6"
+# E2EE vault cryptography, shared with the sync server's test vectors + Android.
+vault-crypto = { path = "../vault-crypto" }
 
 # ssh2 uses WinCNG on Windows (no OpenSSL); elsewhere build a vendored OpenSSL.
 [target.'cfg(windows)'.dependencies]

@@ -1,6 +1,8 @@
+mod cloud;
 mod edit;
 mod ssh;
 
+use cloud::SyncState;
 use ssh::SshManager;
 
 #[tauri::command]
@@ -39,6 +41,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(SshManager::new())
+        .manage(SyncState::new())
         .manage(edit::EditManager::new())
         .setup(|_app| {
             edit::sweep_stale();
@@ -85,7 +88,16 @@ pub fn run() {
             edit::edit_prepare,
             edit::edit_open,
             edit::edit_watch,
-            edit::edit_unwatch
+            edit::edit_unwatch,
+            cloud::cloud_register,
+            cloud::cloud_login_fetch,
+            cloud::cloud_unlock,
+            cloud::cloud_lock,
+            cloud::cloud_status,
+            cloud::cloud_change_password,
+            cloud::cloud_recover_complete,
+            cloud::cloud_push,
+            cloud::cloud_pull
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
