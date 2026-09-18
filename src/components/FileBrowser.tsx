@@ -52,8 +52,7 @@ import {
   type BiSyncPlan,
   type BiSyncSummary,
 } from './sync';
-import { IS_TAURI } from '../ipc/env';
-import { IS_WIN } from '../shells';
+import { IS_TAURI, IS_WIN } from '../ipc/env';
 import { useT } from '../i18n';
 
 /** Local filesystem separator: '\' on Windows, '/' on macOS/Linux. */

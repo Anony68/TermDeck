@@ -19,7 +19,23 @@ use ssh2::{HashType, Session};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::pty::PtyEvent;
+/// One event pushed to a session's Channel. Serialized as
+/// `{ "type": "data", "data": [..] }` or `{ "type": "exit", "code": 0 }`.
+/// The frontend xterm consumes this identically for every SSH terminal.
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum PtyEvent {
+    Data {
+        data: Vec<u8>,
+    },
+    Exit {
+        code: i32,
+        /// Human-readable reason when the connection failed or ended abnormally,
+        /// so the UI can show *why* instead of a bare exit code.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+}
 
 const KEYRING_SERVICE: &str = "TermDeck";
 

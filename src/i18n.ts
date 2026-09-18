@@ -72,7 +72,7 @@ const T = {
   'tab.claudeIdle': { vi: 'Tab có Claude Code (đang chờ)', en: 'Tab has Claude Code (idle)' },
 
   // ----- sidebar -----
-  'sidebar.title': { vi: 'DANH SÁCH TERMINAL', en: 'TERMINAL LIST' },
+  'sidebar.title': { vi: 'DANH SÁCH VPS', en: 'VPS LIST' },
   'sidebar.newTerminal': { vi: 'Terminal mới', en: 'New terminal' },
   'sidebar.tempTerminal': { vi: 'Tạm', en: 'Temp' },
   'sidebar.tempTerminalTitle': {
@@ -100,8 +100,8 @@ const T = {
     vi: 'Chỉ hiện terminal đang hoạt động',
     en: 'Show only active terminals',
   },
-  'sidebar.empty': { vi: 'Chưa có terminal nào. Tạo bằng "＋ Terminal mới".', en: 'No terminals yet. Create one with "＋ New terminal".' },
-  'sidebar.noMatch': { vi: 'Không tìm thấy terminal phù hợp.', en: 'No matching terminals.' },
+  'sidebar.empty': { vi: 'Chưa có VPS nào. Thêm bằng "＋ Thêm VPS".', en: 'No VPS yet. Add one with "＋ Add VPS".' },
+  'sidebar.noMatch': { vi: 'Không tìm thấy VPS phù hợp.', en: 'No matching VPS.' },
   'sidebar.other': { vi: 'Khác', en: 'Other' },
   'sidebar.hint': { vi: 'Kéo thả vào grid để hiện', en: 'Drag into the grid to show' },
   'sidebar.typeAll': { vi: 'Tất cả', en: 'All' },
@@ -542,6 +542,30 @@ const T = {
   'set.update.downloadFailed': { vi: 'Tải thất bại: {err}', en: 'Download failed: {err}' },
   'set.update.installing': { vi: 'Đang tải…', en: 'Downloading…' },
   'set.update.install': { vi: 'Tải & cài đặt', en: 'Download & install' },
+
+  // ----- VPS / host -----
+  'host.add': { vi: 'Thêm VPS', en: 'Add VPS' },
+  'host.edit': { vi: 'Sửa VPS', en: 'Edit VPS' },
+  'host.delete': { vi: 'Xóa VPS', en: 'Delete VPS' },
+  'host.deleteConfirm': { vi: 'Xóa VPS "{name}"? Kết nối và mật khẩu đã lưu sẽ bị xóa.', en: 'Delete VPS "{name}"? Its saved connection and secret will be removed.' },
+  'host.name': { vi: 'Tên hiển thị', en: 'Display name' },
+  'host.addTitle': { vi: 'Thêm VPS', en: 'Add a VPS' },
+  'host.editTitle': { vi: 'Sửa VPS', en: 'Edit VPS' },
+
+  // ----- host detail -----
+  'detail.terminal': { vi: 'Terminal', en: 'Terminal' },
+  'detail.files': { vi: 'Tệp (SFTP)', en: 'Files (SFTP)' },
+  'detail.connecting': { vi: 'Đang kết nối…', en: 'Connecting…' },
+  'detail.connected': { vi: 'Đã kết nối', en: 'Connected' },
+  'detail.disconnected': { vi: 'Mất kết nối', en: 'Disconnected' },
+  'detail.reconnecting': { vi: 'Kết nối lại… (lần {n})', en: 'Reconnecting… (#{n})' },
+  'detail.reconnect': { vi: 'Kết nối lại', en: 'Reconnect' },
+  'detail.emptyTitle': { vi: 'Chưa chọn VPS', en: 'No VPS selected' },
+  'detail.emptyHint': { vi: 'Chọn một VPS bên trái, hoặc thêm VPS mới.', en: 'Pick a VPS on the left, or add a new one.' },
+
+  'status.hosts': { vi: '{count} VPS', en: '{count} VPS' },
+  'set.keys.newHost': { vi: 'Thêm VPS', en: 'Add VPS' },
+  'set.keys.reloadPanel': { vi: 'Tải lại bảng tệp', en: 'Reload file panel' },
 } satisfies Record<string, Entry>;
 
 export type TKey = keyof typeof T;

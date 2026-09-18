@@ -1,172 +1,7 @@
-mod claude;
-mod cursor;
 mod edit;
-mod pty;
-mod shells;
 mod ssh;
 
-use pty::{PtyEvent, PtyManager};
 use ssh::SshManager;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use tauri::ipc::Channel;
-use tauri::{AppHandle, Emitter, Manager, State};
-
-#[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PaneStat {
-    pane_id: String,
-    cpu: f32,
-    mem: u64,
-    /// True when a Claude Code process is running inside this pane's subtree.
-    claude: bool,
-}
-
-/// Heuristic: the native installer runs as `claude.exe`; npm installs run it as
-/// `node …\@anthropic-ai\claude-code\cli.js` (via a `claude.cmd`/`claude.ps1` shim).
-fn is_claude_process(p: &sysinfo::Process) -> bool {
-    let name = p.name().to_string_lossy().to_lowercase();
-    if name.contains("claude") {
-        return true;
-    }
-    if name.starts_with("node") || name.starts_with("bun") {
-        return p
-            .cmd()
-            .iter()
-            .any(|a| a.to_string_lossy().to_lowercase().contains("claude"));
-    }
-    false
-}
-
-/// Background thread that samples CPU% + memory (summed over each cmd's process
-/// subtree) every ~1.5s and emits them to the frontend as `pane://stats`.
-fn start_stats(handle: AppHandle, pids: Arc<Mutex<HashMap<String, u32>>>) {
-    std::thread::spawn(move || {
-        use sysinfo::{Pid, ProcessesToUpdate, System};
-        let mut sys = System::new();
-        loop {
-            std::thread::sleep(Duration::from_millis(1500));
-            let map = pids.lock().unwrap().clone();
-            if map.is_empty() {
-                continue;
-            }
-            sys.refresh_processes(ProcessesToUpdate::All, true);
-
-            // Map parent -> children so we can sum a whole subtree.
-            let mut children: HashMap<Pid, Vec<Pid>> = HashMap::new();
-            for (pid, proc_) in sys.processes() {
-                if let Some(parent) = proc_.parent() {
-                    children.entry(parent).or_default().push(*pid);
-                }
-            }
-
-            let stats: Vec<PaneStat> = map
-                .iter()
-                .map(|(pane, pid)| {
-                    let mut cpu = 0.0f32;
-                    let mut mem = 0u64;
-                    let mut claude = false;
-                    let mut stack = vec![Pid::from_u32(*pid)];
-                    while let Some(p) = stack.pop() {
-                        if let Some(proc_) = sys.process(p) {
-                            cpu += proc_.cpu_usage();
-                            mem += proc_.memory();
-                            if !claude && is_claude_process(proc_) {
-                                claude = true;
-                            }
-                        }
-                        if let Some(ch) = children.get(&p) {
-                            stack.extend(ch.iter().copied());
-                        }
-                    }
-                    PaneStat { pane_id: pane.clone(), cpu, mem, claude }
-                })
-                .collect();
-
-            let _ = handle.emit("pane://stats", stats);
-        }
-    });
-}
-
-#[tauri::command]
-fn detect_shells() -> Vec<shells::ShellInfo> {
-    shells::detect_all()
-}
-
-#[tauri::command(rename_all = "camelCase")]
-fn spawn_pty(
-    state: State<PtyManager>,
-    pane_id: String,
-    shell: String,
-    cwd: String,
-    cols: u16,
-    rows: u16,
-    command: Option<String>,
-    shell_path: Option<String>,
-    on_event: Channel<PtyEvent>,
-) -> Result<(), String> {
-    state.spawn(pane_id, shell, cwd, cols, rows, command, shell_path, on_event)
-}
-
-#[tauri::command(rename_all = "camelCase")]
-fn write_pty(state: State<PtyManager>, pane_id: String, data: String) -> Result<(), String> {
-    state.write(pane_id, data)
-}
-
-#[tauri::command(rename_all = "camelCase")]
-fn resize_pty(
-    state: State<PtyManager>,
-    pane_id: String,
-    cols: u16,
-    rows: u16,
-) -> Result<(), String> {
-    state.resize(pane_id, cols, rows)
-}
-
-#[tauri::command(rename_all = "camelCase")]
-fn kill_pty(state: State<PtyManager>, pane_id: String) -> Result<(), String> {
-    state.kill(pane_id)
-}
-
-/// A leftover shell we're willing to reap: matched on the exact executable stem
-/// so unrelated names (e.g. "flush") never qualify.
-fn is_shell_process(p: &sysinfo::Process) -> bool {
-    let name = p.name().to_string_lossy().to_lowercase();
-    let stem = name.strip_suffix(".exe").unwrap_or(&name);
-    matches!(
-        stem,
-        "bash" | "sh" | "zsh" | "fish" | "powershell" | "pwsh" | "cmd" | "wsl" | "git-bash"
-    )
-}
-
-/// Kill leftover shell processes TermDeck spawned that are no longer attached to
-/// any pane (orphans from a crash or a failed kill). Strictly scoped to *direct
-/// children of this process* that look like shells and aren't in the live pid
-/// set — so it never touches the user's own terminals elsewhere on the system.
-#[tauri::command]
-fn cleanup_orphans(state: State<PtyManager>) -> usize {
-    use sysinfo::{ProcessesToUpdate, System};
-    let tracked: std::collections::HashSet<u32> =
-        state.pids().lock().unwrap().values().copied().collect();
-    let self_pid = std::process::id();
-    let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
-    let mut killed = 0usize;
-    for (pid, proc_) in sys.processes() {
-        let pidn = pid.as_u32();
-        if pidn == self_pid || tracked.contains(&pidn) {
-            continue;
-        }
-        if proc_.parent().map(|p| p.as_u32()) != Some(self_pid) {
-            continue; // only our own direct children can be TermDeck orphans
-        }
-        if is_shell_process(proc_) && proc_.kill() {
-            killed += 1;
-        }
-    }
-    killed
-}
 
 #[tauri::command]
 fn save_text(path: String, contents: String) -> Result<(), String> {
@@ -203,30 +38,16 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .manage(PtyManager::new())
         .manage(SshManager::new())
         .manage(edit::EditManager::new())
-        .setup(|app| {
-            let pids = app.state::<PtyManager>().pids();
-            start_stats(app.handle().clone(), pids);
+        .setup(|_app| {
             edit::sweep_stale();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            detect_shells,
-            spawn_pty,
-            write_pty,
-            resize_pty,
-            kill_pty,
-            cleanup_orphans,
             save_text,
             read_text,
             download_and_run,
-            claude::claude_session,
-            claude::claude_sessions,
-            claude::claude_usage,
-            claude::claude_plan,
-            cursor::cursor_usage,
             ssh::spawn_ssh,
             ssh::write_ssh,
             ssh::resize_ssh,

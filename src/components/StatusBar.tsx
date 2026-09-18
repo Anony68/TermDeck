@@ -1,9 +1,4 @@
-import { useState } from 'react';
-import { useStore, activeTabSelector, displayItems } from '../state/store';
-import { LAYOUTS, resolveLayout } from '../layouts';
-import { writeSession } from '../ipc/session';
-import { ClaudeIcon } from './ClaudeIcon';
-import { IconSend } from './icons';
+import { useStore, findHost, termId } from '../state/store';
 import { useT } from '../i18n';
 
 function fmtTime(ms: number | null): string {
@@ -13,48 +8,24 @@ function fmtTime(ms: number | null): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function fmtK(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
-  return String(n);
-}
-
 export function StatusBar() {
-  const tab = useStore(activeTabSelector);
-  const panes = useStore((s) => s.panes);
-  const runtime = useStore((s) => s.runtime);
+  const hostCount = useStore((s) => s.hosts.length);
+  const activeHostId = useStore((s) => s.activeHostId);
+  const host = useStore((s) => findHost(s, s.activeHostId));
+  const status = useStore((s) => (activeHostId ? s.runtime[termId(activeHostId)]?.status : undefined));
+  const ssh = useStore((s) => (activeHostId ? s.sshStatus[termId(activeHostId)] : undefined));
   const savedAt = useStore((s) => s.savedAt);
-  const claudeSessions = useStore((s) => s.claudeSessions);
-  const stats = useStore((s) => s.stats);
   const t = useT();
-  const [broadcast, setBroadcast] = useState<string | null>(null);
-  if (!tab) return null;
 
-  // A4: aggregate Claude activity across all panes running Claude.
-  const claudeList = Object.values(claudeSessions).filter((c) => c.found);
-  const claudeCtx = claudeList.reduce((sum, c) => sum + (c.contextTokens || 0), 0);
-  const claudePanes = panes.filter((p) => stats[p.id]?.claude);
-
-  // A6: broadcast a prompt to every Claude pane (type + Enter after a beat).
-  const sendBroadcast = () => {
-    const text = (broadcast ?? '').trim();
-    if (!text) return setBroadcast(null);
-    for (const p of claudePanes) {
-      writeSession(p, text);
-      window.setTimeout(() => writeSession(p, '\r'), 180);
-    }
-    setBroadcast(null);
-  };
-
-  const items = displayItems(tab, panes);
-  const shown = items.map((it) => panes.find((p) => p.id === it.paneId)).filter(Boolean) as typeof panes;
-  const cmdCount = items.length;
-  const running = shown.filter((p) => (runtime[p.id]?.status ?? 'running') === 'running').length;
-  const label = tab.layout === 'auto'
-    ? `Auto · ${LAYOUTS[resolveLayout(tab.layout, items.length)].label}`
-    : LAYOUTS[resolveLayout(tab.layout, items.length)].label;
+  let conn = '';
+  if (host) {
+    if (status === 'exited') conn = t('detail.disconnected');
+    else if (ssh?.state === 'connected') conn = t('detail.connected');
+    else if (ssh?.state === 'reconnecting') conn = t('detail.reconnecting', { n: ssh.attempt });
+    else conn = t('detail.connecting');
+  }
 
   return (
-    <>
     <div
       style={{
         display: 'flex',
@@ -69,67 +40,16 @@ export function StatusBar() {
         flex: 'none',
       }}
     >
-      <span>{t('status.tab', { name: tab.name })}</span>
-      <span>{t('status.counts', { count: cmdCount, running })}</span>
-      {claudeList.length > 0 && (
-        <span
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#d97757', cursor: 'pointer' }}
-          title={t('status.broadcastTip')}
-          onClick={() => setBroadcast('')}
-        >
-          <ClaudeIcon size={11} /> {t('status.claudeAgg', { n: claudeList.length, ctx: fmtK(claudeCtx) })}
-          <IconSend size={11} />
+      <span>{t('status.hosts', { count: hostCount })}</span>
+      {host && (
+        <span>
+          {host.ssh.user}@{host.ssh.host} · {conn}
         </span>
       )}
       <span style={{ flex: 1 }} />
-      <span>{t('status.layout', { label })}</span>
       <span style={{ color: 'var(--accent)' }}>
         ● {savedAt ? t('status.saved', { time: fmtTime(savedAt) }) : t('status.autosave')}
       </span>
     </div>
-
-    {broadcast !== null && (
-      <div
-        onMouseDown={() => setBroadcast(null)}
-        style={{ position: 'fixed', inset: 0, background: 'rgba(5,7,10,0.55)', display: 'grid', placeItems: 'center', zIndex: 60 }}
-      >
-        <div
-          onMouseDown={(e) => e.stopPropagation()}
-          style={{
-            width: 460,
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border-3)',
-            borderRadius: 12,
-            boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
-            padding: 20,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, font: '600 14px var(--font-ui)', color: '#d97757', marginBottom: 12 }}>
-            <ClaudeIcon size={14} /> {t('status.broadcastTitle')}
-          </div>
-          <textarea
-            autoFocus
-            className="field"
-            placeholder={t('status.broadcastPlaceholder', { n: claudePanes.length })}
-            value={broadcast}
-            onChange={(e) => setBroadcast(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendBroadcast();
-              if (e.key === 'Escape') setBroadcast(null);
-            }}
-            style={{ width: '100%', minHeight: 90, resize: 'vertical', font: '400 12.5px var(--font-ui)' }}
-          />
-          <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-            <button className="ghost-btn" style={{ padding: '8px 16px' }} onClick={() => setBroadcast(null)}>
-              {t('common.cancel')}
-            </button>
-            <button className="accent-btn" style={{ padding: '8px 16px' }} onClick={sendBroadcast}>
-              {t('status.broadcastSend', { n: claudePanes.length })}
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
-    </>
   );
 }

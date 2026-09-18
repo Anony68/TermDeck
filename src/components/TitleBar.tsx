@@ -1,5 +1,4 @@
 import { windowControls } from '../ipc/api';
-import { TabStrip } from './TabStrip';
 import { IconMinimize, IconMaximize, IconClose } from './icons';
 import { useT } from '../i18n';
 
@@ -34,10 +33,6 @@ export function TitleBar() {
           {'>_'}
         </div>
         <span style={{ font: '600 12.5px var(--font-ui)', color: 'var(--text)' }}>TermDeck</span>
-      </div>
-
-      <div style={{ marginLeft: 20, alignSelf: 'center' }}>
-        <TabStrip />
       </div>
 
       <div data-tauri-drag-region style={{ flex: 1, alignSelf: 'stretch' }} />

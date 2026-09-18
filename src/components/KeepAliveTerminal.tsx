@@ -2,17 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { spawnPty } from '../ipc/pty';
 import { spawnSsh } from '../ipc/ssh';
-import { writeSession, resizeSession, killSession, paneKind } from '../ipc/session';
+import { writeSession, resizeSession, killSession } from '../ipc/session';
 import { copyText, pasteText } from '../ipc/clipboard';
 import { useT } from '../i18n';
 import { useStore, findPane } from '../state/store';
-import { markPaneActivity, clearPaneActivity } from '../state/activity';
 import { useSlots } from '../state/slots';
 import { getTerminalHolder } from '../terminalHolder';
-import { IS_TAURI } from '../ipc/env';
-import { IS_MAC } from '../shells';
+import { IS_TAURI, IS_MAC } from '../ipc/env';
 import { FONT_PX } from '../fontSizes';
 import { ContextMenu } from './ContextMenu';
 
@@ -196,7 +193,7 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
 
     if (!IS_TAURI) {
       term.writeln(`\x1b[38;2;91;100;114m${t('term.previewNote')}\x1b[0m`);
-      term.writeln(`\x1b[38;2;74;163;255m${p.shell}\x1b[0m  ${p.cwd || t('common.default')}`);
+      term.writeln(`\x1b[38;2;74;163;255m${p.ssh.user}@${p.ssh.host}\x1b[0m`);
       return () => {
         cleanupResize();
         term.dispose();
@@ -207,40 +204,27 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
     const runCmd = consumeRunOnSpawn(paneId);
     const common = {
       onData: (bytes: Uint8Array) => {
-        markPaneActivity(paneId);
         term.write(bytes);
       },
       onExit: (code: number, error?: string) => {
         if (!disposed) setPaneStatus(paneId, 'exited', code, error);
       },
     };
-    const spawning =
-      paneKind(p) === 'ssh' && p.ssh
-        ? spawnSsh({
-            paneId,
-            cfg: p.ssh,
-            cols: term.cols || 80,
-            rows: term.rows || 24,
-            // Land in the configured remote directory, then optionally run the preset.
-            command:
-              [
-                p.ssh.remotePath?.trim() ? `cd "${p.ssh.remotePath.trim()}"` : '',
-                runCmd && p.presetCommand ? p.presetCommand : '',
-              ]
-                .filter(Boolean)
-                .join(' && ') || undefined,
-            ...common,
-          })
-        : spawnPty({
-            paneId,
-            shell: p.shell,
-            cwd: p.cwd,
-            cols: term.cols || 80,
-            rows: term.rows || 24,
-            command: runCmd ? p.presetCommand : undefined,
-            shellPath: useStore.getState().settings.shellPaths[p.shell],
-            ...common,
-          });
+    const spawning = spawnSsh({
+      paneId,
+      cfg: p.ssh,
+      cols: term.cols || 80,
+      rows: term.rows || 24,
+      // Land in the configured remote directory, then optionally run the preset.
+      command:
+        [
+          p.ssh.remotePath?.trim() ? `cd "${p.ssh.remotePath.trim()}"` : '',
+          runCmd && p.presetCommand ? p.presetCommand : '',
+        ]
+          .filter(Boolean)
+          .join(' && ') || undefined,
+      ...common,
+    });
     spawning.catch((e) => {
       const err = t('term.connError', { err: String(e) });
       term.writeln(`\r\n\x1b[31m${err}\x1b[0m`);
@@ -257,7 +241,6 @@ export function KeepAliveTerminal({ paneId }: { paneId: string }) {
       onData.dispose();
       cleanupResize();
       killSession(paneId);
-      clearPaneActivity(paneId);
       term.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

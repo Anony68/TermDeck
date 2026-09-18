@@ -2,11 +2,11 @@
 
 # TermDeck
 
-**A terminal management dashboard — bring cmd / PowerShell / Git Bash / WSL and remote SSH together in one tidy place.**
+**A VPS manager — keep your servers in one tidy place, each with an interactive SSH terminal and a built-in SFTP file manager.**
 
-Run many real terminals in a single window: split them into **tabs**, arrange them in a **grid**, group them by **project**, watch each one's **CPU / RAM / uptime**, and **restore everything exactly** the next time you open it.
+Add a VPS once (host, user, password or `.pem` key), pick it from the sidebar, and get a live **SSH terminal** and a dual-pane **SFTP** browser for it — side by side, no separate tools.
 
-Lightweight (~3.5 MB installer) thanks to **Tauri v2 + Rust + React** — not Electron.
+Lightweight (~3 MB installer) thanks to **Tauri v2 + Rust + React** — not Electron.
 
 [**⬇ Download the latest release**](https://github.com/Anony68/TermDeck/releases) · Windows · macOS · Linux
 
@@ -18,34 +18,31 @@ Lightweight (~3.5 MB installer) thanks to **Tauri v2 + Rust + React** — not El
 
 ## What is TermDeck?
 
-When you juggle several projects at once — each with a few terminals (dev server, watcher, git, logs…) — scattered terminal windows are easy to lose and mix up. **TermDeck** turns them into a single *control panel*: **real** terminals (type commands, run processes exactly as usual) laid out neatly in a grid, grouped by project, and always brought back to where you left off. It also speaks **SSH** and ships a built-in **SFTP file manager**, so remote servers live right next to your local shells.
+TermDeck is a control panel for the servers you SSH into. Each **VPS** is one saved SSH connection; selecting it opens a detail view with two tabs:
+
+- **Terminal** — a real interactive SSH shell (auto-reconnects if the link drops).
+- **Files (SFTP)** — a dual-pane file manager, opened from the *same* connection, no re-login.
+
+Connections stay alive in the background as you switch between servers.
 
 ## Features
 
-### Terminals
-- **Real terminals, many kinds** — PowerShell, CMD, Git Bash, WSL. Available shells are auto-detected.
-- **SSH terminals** — connect to remote hosts with **password or private key (.pem)** auth. Passwords/passphrases are stored in the **OS credential store** (Windows Credential Manager / Keychain), never in the config file. Host keys are pinned on first use (TOFU) to guard against MITM.
-- **Flexible grid** — 6 layout presets (1, 1×2, 2×1, 2×2, 1-big + 2, 3×2), **drag-and-drop** to rearrange, and the grid grows automatically as you add terminals.
-- **Tabs are views** — each tab is its own arrangement. Terminals keep **running in the background** even when hidden; show/hide freely, **pin** one to appear in every tab. Tabs support drag-reorder and pinning.
-- **Terminal list = the manager** — running/stopped status, **Stop / Restart** buttons, right-click to **Edit / Pin / Stop / Delete**.
-- **Copy & paste that works** — select + right-click (or **Ctrl+C**) to copy, right-click with no selection (or **Ctrl+V**) to paste; Ctrl+C with no selection still sends SIGINT. Shift+right-click opens the full context menu (Copy / Paste / Select all / Clear).
-
-### Claude Code integration
-- **Auto-detection** — a terminal running Claude Code shows a spark icon on the pane header, its tab and the sidebar; it **pulses while Claude is working** and stays still when idle, so you can tell at a glance which session is busy.
-- **Quick commands** — one-click chips + a menu on the pane bar for `/remote-control`, `/resume`, `/compact`, `Esc`, and launch variants (`claude`, `claude -c`, `claude -r`, `claude update`).
+### VPS connections (SSH)
+- **Password or private key (.pem)** auth. Passwords/passphrases are stored in the **OS credential store** (Windows Credential Manager / macOS Keychain), never in the config file. Host keys are pinned on first use (TOFU) to guard against MITM.
+- **Import** existing hosts from `~/.ssh/config`, or a Bitvise Tunnelier `.tlp` profile.
+- **Interactive terminal** (xterm.js) with copy/paste that works: select + right-click (or Ctrl/Cmd+C) to copy, right-click with no selection (or Ctrl/Cmd+V) to paste; Ctrl/Cmd+C with no selection sends SIGINT.
 
 ### Built-in SFTP file manager
-- **Dual-pane browser** (Bitvise-style) — local filesystem on one side, remote SFTP on the other. Browse, filter, create / rename / delete.
-- **Recursive upload & download** — transfer whole directory trees with a live progress bar and a per-batch summary (files transferred / skipped).
-- **Conflict handling** — when a file already exists, choose **Overwrite / Overwrite all / Skip / Skip all / Cancel**.
-- **One-way directory sync** (rclone-style mirror) — a **Sync** button on each column mirrors *Local ▶ Remote* or *Remote ▶ Local*: uploads new/changed files (by size or mtime) and removes extras on the target, behind a confirmation dialog.
-- **Fast navigation** — marquee drag-select, type-ahead jump, **Backspace** for parent folder, **Delete** to remove (with a confirm popup), **F5** to reload the tree. Each pane remembers its last folder.
+- **Dual-pane browser** — local filesystem on one side, remote SFTP on the other. Browse, filter, create / rename / delete / chmod.
+- **Recursive upload & download** with a live progress bar and a per-batch summary, and **Overwrite / Skip / Cancel** conflict handling.
+- **One-way directory sync** (rclone-style mirror) *Local ▶ Remote* or *Remote ▶ Local*, behind a confirmation dialog.
+- **Edit-in-place** — open a remote file in your editor; every save re-uploads automatically.
+- **Fast navigation** — marquee drag-select, type-ahead jump, Backspace for parent, Delete to remove, F5 to reload.
 
 ### Workspace & polish
-- **Group by project** — save projects (name + folder) for quick picking; the sidebar groups terminals per project.
-- **Per-terminal stats** — ⏱ uptime · CPU% · RAM (summed across the whole child process tree, e.g. `npm run dev` includes its `node` process).
-- **Session restore** — reopens the right shell, folder, layout and name. Snapshots let you roll back.
-- **Tuning** — terminal font size, whole-app zoom, and a **GitHub-based update check** with one-click download-and-install.
+- **VPS list** with search and per-host connection status.
+- **Session restore** — reopens the last selected VPS. Export / import your VPS list as JSON.
+- **Tuning** — terminal font size, whole-app zoom, VI/EN language, and a **GitHub-based update check** with one-click download-and-install.
 
 ## Download & install
 
@@ -59,7 +56,7 @@ Head to [**Releases**](https://github.com/Anony68/TermDeck/releases) and grab th
 
 ## Tech stack
 
-**Tauri v2** (app shell, WebView2/WebKit) · **Rust** (`portable-pty` → ConPTY for local shells, `ssh2`/libssh2 for SSH & SFTP, `keyring` for secrets, `sysinfo` for stats) · **React + TypeScript + Vite** · **xterm.js** (terminal rendering) · **Zustand** + `@tauri-apps/plugin-store` (state & session persistence).
+**Tauri v2** (app shell, WebView2/WebKit) · **Rust** (`ssh2`/libssh2 for SSH & SFTP, `keyring` for secrets, `notify` for edit-in-place) · **React + TypeScript + Vite** · **xterm.js** (terminal rendering) · **Zustand** + `@tauri-apps/plugin-store` (state & persistence).
 
 ## Development
 
@@ -69,32 +66,30 @@ Requirements: **Node.js ≥ 18**, **Rust** (Windows needs **MSVC** + **Microsoft
 npm install
 npm run tauri dev      # run the app in dev mode
 npm run tauri build    # bundle an installer for the current OS
-npm run dev            # (optional) UI-only preview in a browser; terminals are placeholders
 ```
 
-> Windows note: the project uses the **MSVC** toolchain. If `rustup` defaults to `-gnu`, set an override:
-> `rustup override set stable-x86_64-pc-windows-msvc`
+> On macOS the committed `bundle.targets` are Windows-only; build the mac bundle with
+> `npm run tauri build -- --bundles app,dmg`.
 
-Cross-platform releases are built automatically by **GitHub Actions** (`.github/workflows/release.yml`) when a `v*` tag is pushed.
+Cross-platform releases are built by **GitHub Actions** (`.github/workflows/release.yml`) when a `v*` tag is pushed.
 
 ## Project structure
 
 ```
 src/                       # React/TS frontend
-  components/              # TitleBar, TabStrip, Toolbar, Sidebar, Grid, Pane,
-                           # KeepAliveTerminal, TerminalLayer, StatusBar, ContextMenu,
-                           # ClaudeIcon, FileBrowser, FilePanel (SFTP dual-pane)…
+  components/              # TitleBar, Toolbar, Sidebar (VPS list), HostDetail,
+                           # KeepAliveTerminal, TerminalLayer, StatusBar,
+                           # FileBrowser + FilePanel (SFTP dual-pane), PropertiesDialog…
   components/transfer.ts   # recursive upload/download with conflict resolution
   components/sync.ts       # rclone-style one-way directory mirror
-  dialogs/AddCmdDialog     # add/edit a terminal (shell / SSH / file-browser types)
-  settings/SettingsWindow  # Settings: General, Projects, Session & Restore, Layout, Shells, Shortcuts, Updates
-  state/store.ts           # Zustand (tabs / panes / projects / settings / snapshots) + persist
-  ipc/                     # Rust bridge: pty, ssh (SSH/SFTP), session, clipboard, shells, dialog, window, stats, update
+  dialogs/AddHostDialog    # add/edit a VPS (SSH connection)
+  settings/SettingsWindow  # Settings: General, Session, Editor, Shortcuts, Updates
+  state/store.ts           # Zustand (hosts / settings) + persist; sessions derived per host
+  ipc/                     # Rust bridge: ssh (SSH/SFTP + local FS), session, edit, persist, update
 src-tauri/src/
-  pty.rs                   # PtyManager: spawn/write/resize/kill + reader/waiter thread → Channel
-  ssh.rs                   # SSH terminals + SFTP + local FS commands (ssh2/libssh2, keyring, host-key pinning)
-  shells.rs                # detect PowerShell / CMD / Git Bash / WSL
-  lib.rs                   # commands + plugins (dialog/store/opener/clipboard) + CPU/RAM sampler + Claude detection
+  ssh.rs                   # SSH terminals + SFTP + local FS (ssh2/libssh2, keyring, host-key pinning)
+  edit.rs                  # edit-in-place watcher for remote files
+  lib.rs                   # command registration + plugins (dialog/store/opener/clipboard)
 ```
 
 ## License

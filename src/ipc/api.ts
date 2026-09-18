@@ -1,30 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
-import type { ShellInfo } from '../types';
 import { IS_TAURI } from './env';
-
-/** Detect available shells. Falls back to "all available" in browser preview. */
-export async function detectShells(): Promise<ShellInfo[]> {
-  if (!IS_TAURI) {
-    return [
-      { kind: 'powershell', label: 'PowerShell', path: '', available: true },
-      { kind: 'cmd', label: 'CMD', path: '', available: true },
-      { kind: 'git-bash', label: 'Git Bash', path: '', available: true },
-      { kind: 'wsl', label: 'WSL', path: '', available: true },
-    ];
-  }
-  return invoke<ShellInfo[]>('detect_shells');
-}
-
-/** Kill leftover TermDeck-spawned shell processes not attached to any pane.
- *  Returns how many were reaped. */
-export async function cleanupOrphans(): Promise<number> {
-  if (!IS_TAURI) return 0;
-  try {
-    return await invoke<number>('cleanup_orphans');
-  } catch {
-    return 0;
-  }
-}
 
 /** Native folder picker for the "Chọn…" button. */
 export async function pickFolder(defaultPath?: string): Promise<string | null> {
@@ -43,18 +17,6 @@ export async function pickFile(
   const { open } = await import('@tauri-apps/plugin-dialog');
   const res = await open({ directory: false, multiple: false, defaultPath, filters });
   return typeof res === 'string' ? res : null;
-}
-
-/** Subscribe to per-cmd CPU/RAM/Claude stats emitted by the Rust sampler. */
-export async function onPaneStats(
-  cb: (list: Array<{ paneId: string; cpu: number; mem: number; claude: boolean }>) => void
-): Promise<() => void> {
-  if (!IS_TAURI) return () => {};
-  const { listen } = await import('@tauri-apps/api/event');
-  return listen<Array<{ paneId: string; cpu: number; mem: number; claude: boolean }>>(
-    'pane://stats',
-    (e) => cb(e.payload)
-  );
 }
 
 /** Custom-titlebar window controls. */

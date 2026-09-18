@@ -1,6 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <rect width="1024" height="1024" rx="224" ry="224" fill="#2dd4a7"/>
-  <path d="M 342 348 L 528 512 L 342 676" fill="none" stroke="#06251c" stroke-width="82"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <line x1="566" y1="668" x2="726" y2="668" stroke="#06251c" stroke-width="82" stroke-linecap="round"/>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- TermDeck app icon: brand-green squircle + dark terminal prompt -->
+  <rect x="92" y="92" width="840" height="840" rx="188" fill="#2dd4a7"/>
+  <g fill="none" stroke="#06251c" stroke-width="82" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 330 362 L 536 512 L 330 662"/>
+    <path d="M 566 640 L 702 640"/>
+  </g>
 </svg>
