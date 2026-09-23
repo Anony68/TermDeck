@@ -17,11 +17,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.termdeck.vault.Host
 import com.termdeck.vault.VaultEntry
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
@@ -192,28 +198,136 @@ private fun HostDialog(onDismiss: () -> Unit, onSave: (VaultEntry) -> Unit) {
 @Composable
 private fun HostDetailScreen(vm: AppViewModel) {
     val entry = vm.selectedHostId?.let { vm.entry(it) }
+    val h = entry?.host
+    val scope = rememberCoroutineScope()
+    var tab by remember { mutableStateOf(0) }
+    var conn by remember { mutableStateOf("connecting") } // connecting | ready | error
+    var connErr by remember { mutableStateOf<String?>(null) }
+    val session = remember { mutableStateOf<SshSession?>(null) }
+
+    // Connect once per host; disconnect on leave.
+    DisposableEffect(vm.selectedHostId) {
+        if (h != null && entry != null) {
+            scope.launch {
+                try {
+                    val s = SshSession(h, entry.secret, entry.keyContent)
+                    withContext(Dispatchers.IO) { s.connect() }
+                    session.value = s
+                    conn = "ready"
+                } catch (e: Exception) {
+                    connErr = e.message ?: e.toString(); conn = "error"
+                }
+            }
+        }
+        onDispose { session.value?.let { s -> scope.launch(Dispatchers.IO) { s.close() } } }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(entry?.host?.name?.ifEmpty { entry.host.host } ?: "VPS") },
+                title = { Text(h?.name?.ifEmpty { h.host } ?: "VPS") },
                 navigationIcon = { IconButton({ vm.back() }) { Icon(Icons.Filled.ArrowBack, "Quay lại") } },
             )
         },
     ) { pad ->
-        Column(Modifier.padding(pad).padding(20.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            val h = entry?.host
-            if (h != null) {
-                Text("${h.user}@${h.host}:${h.port}", style = MaterialTheme.typography.titleMedium)
-                if (!h.remotePath.isNullOrBlank()) Text("Thư mục: ${h.remotePath}")
-                Spacer(Modifier.height(12.dp))
-                ElevatedCard {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Terminal SSH + SFTP", style = MaterialTheme.typography.titleSmall)
-                        Text("Đang phát triển (SP3.4). VPS này đã đồng bộ và sẵn sàng kết nối.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+        Column(Modifier.padding(pad).fillMaxSize()) {
+            if (h == null) { Text("Không tìm thấy VPS.", Modifier.padding(20.dp)); return@Column }
+            TabRow(selectedTabIndex = tab) {
+                Tab(tab == 0, { tab = 0 }, text = { Text("Terminal") })
+                Tab(tab == 1, { tab = 1 }, text = { Text("Tệp (SFTP)") })
+            }
+            when (conn) {
+                "connecting" -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                "error" -> Box(Modifier.fillMaxSize(), Alignment.Center) { Text("Lỗi kết nối: $connErr", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
+                else -> {
+                    val s = session.value!!
+                    if (tab == 0) TerminalTab(s) else FilesTab(s, h.remotePath?.ifBlank { null })
                 }
-            } else {
-                Text("Không tìm thấy VPS.")
+            }
+        }
+    }
+}
+
+@Composable
+private fun TerminalTab(session: SshSession) {
+    var output by remember { mutableStateOf("") }
+    var input by remember { mutableStateOf("") }
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(session) {
+        withContext(Dispatchers.IO) {
+            runCatching { session.openShell { chunk -> output = (output + chunk).takeLast(40000) } }
+        }
+    }
+    LaunchedEffect(output) { scroll.animateScrollTo(scroll.maxValue) }
+
+    Column(Modifier.fillMaxSize()) {
+        Text(
+            output.ifEmpty { "Đang mở shell…" },
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(10.dp),
+            fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                input, { input = it }, Modifier.weight(1f),
+                placeholder = { Text("Lệnh…") }, singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
+            )
+            IconButton({ scope.launch(Dispatchers.IO) { session.send(input + "\n") }; input = "" }) {
+                Icon(Icons.Filled.Send, "Gửi")
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilesTab(session: SshSession, startDir: String?) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var path by remember { mutableStateOf(startDir ?: "") }
+    var entries by remember { mutableStateOf<List<SftpEntry>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var msg by remember { mutableStateOf<String?>(null) }
+
+    fun load(p: String) {
+        loading = true; msg = null
+        scope.launch {
+            try {
+                val dir = withContext(Dispatchers.IO) { if (p.isBlank()) session.homeDir() else p }
+                val list = withContext(Dispatchers.IO) { session.list(dir) }
+                path = dir; entries = list
+            } catch (e: Exception) { msg = e.message } finally { loading = false }
+        }
+    }
+    LaunchedEffect(Unit) { load(startDir ?: "") }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton({ if (path.length > 1) load(path.substringBeforeLast('/').ifEmpty { "/" }) }) { Icon(Icons.Filled.ArrowUpward, "Lên") }
+            Text(path, Modifier.weight(1f), fontFamily = FontFamily.Monospace, fontSize = 12.sp, maxLines = 1)
+            IconButton({ load(path) }) { Icon(Icons.Filled.Refresh, "Tải lại") }
+        }
+        msg?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp)) }
+        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        LazyColumn(Modifier.fillMaxSize()) {
+            items(entries, key = { it.path }) { e ->
+                ListItem(
+                    headlineContent = { Text(e.name) },
+                    supportingContent = { if (!e.isDir) Text("${e.size} B") },
+                    leadingContent = { Icon(if (e.isDir) Icons.Filled.Folder else Icons.Filled.InsertDriveFile, null) },
+                    modifier = Modifier.clickable {
+                        if (e.isDir) load(e.path)
+                        else scope.launch {
+                            try {
+                                val f = withContext(Dispatchers.IO) { session.download(e.path, e.name, ctx.cacheDir) }
+                                msg = "Đã tải: ${f.absolutePath}"
+                            } catch (ex: Exception) { msg = ex.message }
+                        }
+                    },
+                )
+                HorizontalDivider()
             }
         }
     }

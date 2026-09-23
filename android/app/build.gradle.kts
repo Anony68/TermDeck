@@ -64,5 +64,11 @@ dependencies {
     // app classpath too. (org.json is provided by the Android platform.)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // SSH terminal + SFTP.
+    implementation("com.hierynomus:sshj:0.38.0")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    implementation("org.slf4j:slf4j-api:2.0.13")
+    implementation("org.slf4j:slf4j-simple:2.0.13")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
