@@ -18,7 +18,7 @@ export function AccountDialog() {
   const cloudChangePassword = useStore((s) => s.cloudChangePassword);
   const cloudLock = useStore((s) => s.cloudLock);
   const cloudSignOut = useStore((s) => s.cloudSignOut);
-  const cloudSync = useStore((s) => s.cloudSync);
+  const cloudSyncAll = useStore((s) => s.cloudSyncAll);
   const t = useT();
 
   const [mode, setMode] = useState<Mode>('login');
@@ -58,7 +58,7 @@ export function AccountDialog() {
         </Row>
         {cloud.lastError && <div style={errStyle}>{cloud.lastError}</div>}
         <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-          <button className="accent-btn" disabled={busy} onClick={() => void cloudSync()}>
+          <button className="accent-btn" disabled={busy} onClick={() => void cloudSyncAll()}>
             <IconRefresh size={13} /> {t('account.syncNow')}
           </button>
           <button className="ghost-btn" onClick={cloudLock}>{t('account.lock')}</button>

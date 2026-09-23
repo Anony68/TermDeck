@@ -131,6 +131,8 @@ interface AppState {
   cloudSignOut: () => void;
   /** Push local changes then pull remote ones and merge (no-op if locked). */
   cloudSync: () => Promise<void>;
+  /** Force-upload every local VPS (marks all dirty), then sync. Used by "Sync now". */
+  cloudSyncAll: () => Promise<void>;
   openAccount: () => void;
   closeAccount: () => void;
 
@@ -627,6 +629,12 @@ export const useStore = create<AppState>((set, get) => {
       } catch (e) {
         set({ cloud: { ...get().cloud, syncing: false, lastError: String(e) } });
       }
+    },
+
+    cloudSyncAll: async () => {
+      const ids = get().hosts.map((h) => h.id);
+      set({ cloud: { ...get().cloud, dirty: Array.from(new Set([...get().cloud.dirty, ...ids])) } });
+      await get().cloudSync();
     },
 
     openAccount: () => set({ ui: { ...get().ui, accountOpen: true } }),
