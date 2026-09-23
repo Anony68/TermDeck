@@ -522,6 +522,9 @@ export const useStore = create<AppState>((set, get) => {
         account = await cloudLoginFetch(bu, em);
       }
       await ipcUnlock(bu, em, masterPassword, account);
+      // Upload any VPS that already exist locally on this device (e.g. added before
+      // signing in) by marking them dirty; sync then pushes + pulls a merged set.
+      const localIds = get().hosts.map((h) => h.id);
       commit({
         cloud: {
           ...get().cloud,
@@ -530,6 +533,7 @@ export const useStore = create<AppState>((set, get) => {
           account,
           signedIn: true,
           unlocked: true,
+          dirty: Array.from(new Set([...get().cloud.dirty, ...localIds])),
           lastError: null,
         },
       });
