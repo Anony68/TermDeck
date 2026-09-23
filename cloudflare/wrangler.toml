@@ -1,0 +1,8 @@
+name = "termdeck-sync"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "termdeck-sync"
+database_id = "ddea95ed-ad75-4269-917f-06cfa989d6be"
