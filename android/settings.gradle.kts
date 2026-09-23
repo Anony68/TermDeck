@@ -1,5 +1,22 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
 rootProject.name = "termdeck-android"
 
-// The :vault module is pure Kotlin/JVM (crypto + sync), so it builds and unit-tests without
-// the Android SDK or an emulator. The Compose :app module (added next) will depend on it.
+// :vault is pure Kotlin/JVM (crypto + sync), unit-tested without the SDK.
+// :app is the Android/Compose client, depending on :vault.
 include(":vault")
+include(":app")
