@@ -42,7 +42,7 @@ impl IntoResponse for ApiError {
 }
 type ApiResult<T> = Result<T, ApiError>;
 
-fn require_auth(state: &AppState, headers: &HeaderMap) -> ApiResult<AccountId> {
+async fn require_auth(state: &AppState, headers: &HeaderMap) -> ApiResult<AccountId> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -51,6 +51,7 @@ fn require_auth(state: &AppState, headers: &HeaderMap) -> ApiResult<AccountId> {
     state
         .store
         .resolve_session(token)
+        .await
         .ok_or(ApiError(StatusCode::UNAUTHORIZED, "invalid or expired token"))
 }
 
@@ -79,11 +80,12 @@ async fn register(State(state): State<AppState>, Json(req): Json<RegisterReq>) -
     let id = state
         .store
         .create_account(&req.email, hash, recovery_hash, req.crypto)
+        .await
         .map_err(|e| match e {
             StoreError::EmailTaken => ApiError(StatusCode::CONFLICT, "email already registered"),
             _ => ApiError(StatusCode::INTERNAL_SERVER_ERROR, "store error"),
         })?;
-    Ok(Json(TokenResp { token: state.store.create_session(&id) }))
+    Ok(Json(TokenResp { token: state.store.create_session(&id).await }))
 }
 
 #[derive(Deserialize)]
@@ -102,6 +104,7 @@ async fn login(State(state): State<AppState>, Json(req): Json<LoginReq>) -> ApiR
     let (id, hash) = state
         .store
         .account_auth(&req.email)
+        .await
         .ok_or(ApiError(StatusCode::UNAUTHORIZED, "invalid credentials"))?;
     if !verify_auth_secret(&req.auth_secret_hex, &hash) {
         return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid credentials"));
@@ -109,8 +112,9 @@ async fn login(State(state): State<AppState>, Json(req): Json<LoginReq>) -> ApiR
     let crypto = state
         .store
         .account_crypto(&id)
+        .await
         .ok_or(ApiError(StatusCode::INTERNAL_SERVER_ERROR, "store error"))?;
-    Ok(Json(LoginResp { token: state.store.create_session(&id), crypto }))
+    Ok(Json(LoginResp { token: state.store.create_session(&id).await, crypto }))
 }
 
 #[derive(Deserialize)]
@@ -125,11 +129,12 @@ async fn change_password(
     headers: HeaderMap,
     Json(req): Json<ChangePasswordReq>,
 ) -> ApiResult<StatusCode> {
-    let id = require_auth(&state, &headers)?;
+    let id = require_auth(&state, &headers).await?;
     let hash = hash_auth_secret(&req.new_auth_secret_hex);
     state
         .store
         .update_auth(&id, hash, req.crypto)
+        .await
         .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "store error"))?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -156,6 +161,7 @@ async fn recover_begin(State(state): State<AppState>, Json(req): Json<RecoverBeg
     let (_, _, crypto) = state
         .store
         .account_recovery(&req.email)
+        .await
         .ok_or(ApiError(StatusCode::NOT_FOUND, "no such account"))?;
     Ok(Json(RecoverBeginResp { crypto }))
 }
@@ -173,6 +179,7 @@ async fn recover_complete(State(state): State<AppState>, Json(req): Json<Recover
     let (id, recovery_hash, _) = state
         .store
         .account_recovery(&req.email)
+        .await
         .ok_or(ApiError(StatusCode::UNAUTHORIZED, "invalid recovery"))?;
     if !verify_auth_secret(&req.recovery_auth_secret_hex, &recovery_hash) {
         return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid recovery code"));
@@ -181,8 +188,9 @@ async fn recover_complete(State(state): State<AppState>, Json(req): Json<Recover
     state
         .store
         .update_auth(&id, hash, req.crypto)
+        .await
         .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "store error"))?;
-    Ok(Json(TokenResp { token: state.store.create_session(&id) }))
+    Ok(Json(TokenResp { token: state.store.create_session(&id).await }))
 }
 
 // ---- sync ----
@@ -203,8 +211,8 @@ async fn sync_pull(
     headers: HeaderMap,
     Query(q): Query<SyncQuery>,
 ) -> ApiResult<Json<SyncPullResp>> {
-    let id = require_auth(&state, &headers)?;
-    let (records, cursor) = state.store.pull(&id, q.since);
+    let id = require_auth(&state, &headers).await?;
+    let (records, cursor) = state.store.pull(&id, q.since).await;
     Ok(Json(SyncPullResp { records, cursor }))
 }
 
@@ -222,8 +230,8 @@ async fn sync_push(
     headers: HeaderMap,
     Json(req): Json<SyncPushReq>,
 ) -> ApiResult<Json<SyncPushResp>> {
-    let id = require_auth(&state, &headers)?;
-    let cursor = state.store.push(&id, req.changes);
+    let id = require_auth(&state, &headers).await?;
+    let cursor = state.store.push(&id, req.changes).await;
     Ok(Json(SyncPushResp { cursor }))
 }
 

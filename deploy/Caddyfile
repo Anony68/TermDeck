@@ -1,0 +1,4 @@
+# Automatic HTTPS for your domain; proxies to the sync server. DOMAIN comes from .env.
+{$DOMAIN} {
+	reverse_proxy server:8787
+}

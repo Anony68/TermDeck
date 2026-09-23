@@ -21,6 +21,8 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+async-trait = "0.1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

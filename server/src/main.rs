@@ -10,7 +10,7 @@ mod store;
 use std::sync::Arc;
 
 use routes::{router, AppState};
-use store::InMemoryStore;
+use store::{InMemoryStore, PgStore, Store};
 
 #[tokio::main]
 async fn main() {
@@ -22,8 +22,18 @@ async fn main() {
         .init();
 
     let bind = std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8787".into());
-    let state = AppState { store: Arc::new(InMemoryStore::new()) };
-    let app = router(state);
+    // DATABASE_URL → durable Postgres; unset → ephemeral in-memory (dev only).
+    let store: Arc<dyn Store> = match std::env::var("DATABASE_URL") {
+        Ok(url) => {
+            tracing::info!("using Postgres store");
+            Arc::new(PgStore::connect(&url).await.expect("connect to Postgres"))
+        }
+        Err(_) => {
+            tracing::warn!("DATABASE_URL not set — using in-memory store (data lost on restart)");
+            Arc::new(InMemoryStore::new())
+        }
+    };
+    let app = router(AppState { store });
 
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
