@@ -1,22 +1,47 @@
 package com.termdeck.app
 
+import android.content.SharedPreferences
 import com.termdeck.vault.Host
 import net.schmizz.sshj.SSHClient
+import net.schmizz.sshj.common.SecurityUtils
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.sftp.SFTPClient
-import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.File
+import java.security.PublicKey
 import kotlin.concurrent.thread
 
 data class SftpEntry(val name: String, val path: String, val isDir: Boolean, val size: Long)
 
 /**
- * One SSH connection to a host, providing an interactive shell and an SFTP client.
- * Blocking calls — invoke from a background dispatcher. Host-key verification is
- * promiscuous for this MVP (TODO: TOFU pinning like the desktop).
+ * Trust-on-first-use host-key verifier: pins each host's key fingerprint in SharedPreferences
+ * on first connect and rejects any later mismatch (MITM guard), matching the desktop's TOFU.
  */
-class SshSession(private val host: Host, private val secret: String, private val keyContent: String) {
+class TofuVerifier(private val prefs: SharedPreferences) : HostKeyVerifier {
+    override fun verify(hostname: String, port: Int, key: PublicKey): Boolean {
+        val fp = SecurityUtils.getFingerprint(key)
+        val id = "hostkey:$hostname:$port"
+        val known = prefs.getString(id, null)
+        return when (known) {
+            null -> { prefs.edit().putString(id, fp).apply(); true } // first use → pin
+            fp -> true
+            else -> false // changed → refuse (possible MITM)
+        }
+    }
+    override fun findExistingAlgorithms(hostname: String, port: Int): List<String> = emptyList()
+}
+
+/**
+ * One SSH connection to a host, providing an interactive shell and an SFTP client.
+ * Blocking calls — invoke from a background dispatcher.
+ */
+class SshSession(
+    private val host: Host,
+    private val secret: String,
+    private val keyContent: String,
+    private val knownHosts: SharedPreferences,
+) {
     private var ssh: SSHClient? = null
     private var shell: Session.Shell? = null
     private var session: Session? = null
@@ -27,7 +52,7 @@ class SshSession(private val host: Host, private val secret: String, private val
 
     fun connect() {
         val c = SSHClient()
-        c.addHostKeyVerifier(PromiscuousVerifier())
+        c.addHostKeyVerifier(TofuVerifier(knownHosts))
         c.connect(host.host, host.port)
         if (host.auth == "key" && keyContent.isNotBlank()) {
             val kp = if (secret.isNotBlank())

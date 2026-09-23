@@ -5,6 +5,9 @@ import { useT } from '../i18n';
 
 type Mode = 'login' | 'register' | 'recover';
 
+/** Default sync server (the deployed Cloudflare Worker); users can override it. */
+const DEFAULT_SYNC_URL = 'https://termdeck-sync.block-blash.workers.dev';
+
 /** Account + E2EE vault: register / sign in / unlock / recover / sync status. */
 export function AccountDialog() {
   const cloud = useStore((s) => s.cloud);
@@ -19,7 +22,7 @@ export function AccountDialog() {
   const t = useT();
 
   const [mode, setMode] = useState<Mode>('login');
-  const [baseUrl, setBaseUrl] = useState(cloud.baseUrl || 'https://');
+  const [baseUrl, setBaseUrl] = useState(cloud.baseUrl || DEFAULT_SYNC_URL);
   const [email, setEmail] = useState(cloud.email || '');
   const [password, setPassword] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');

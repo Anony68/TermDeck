@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AccountScreen(vm: AppViewModel) {
     var mode by remember { mutableStateOf(if (vm.hasAccount) "unlock" else "register") }
-    var baseUrl by remember { mutableStateOf(vm.savedBaseUrl.ifEmpty { "https://" }) }
+    var baseUrl by remember { mutableStateOf(vm.savedBaseUrl.ifEmpty { "https://termdeck-sync.block-blash.workers.dev" }) }
     var email by remember { mutableStateOf(vm.savedEmail) }
     var password by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
@@ -199,6 +199,7 @@ private fun HostDialog(onDismiss: () -> Unit, onSave: (VaultEntry) -> Unit) {
 private fun HostDetailScreen(vm: AppViewModel) {
     val entry = vm.selectedHostId?.let { vm.entry(it) }
     val h = entry?.host
+    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(0) }
     var conn by remember { mutableStateOf("connecting") } // connecting | ready | error
@@ -210,7 +211,7 @@ private fun HostDetailScreen(vm: AppViewModel) {
         if (h != null && entry != null) {
             scope.launch {
                 try {
-                    val s = SshSession(h, entry.secret, entry.keyContent)
+                    val s = SshSession(h, entry.secret, entry.keyContent, ctx.getSharedPreferences("termdeck_knownhosts", 0))
                     withContext(Dispatchers.IO) { s.connect() }
                     session.value = s
                     conn = "ready"
