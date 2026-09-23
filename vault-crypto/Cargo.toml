@@ -16,6 +16,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hex = "0.4"
 
+[dev-dependencies]
+ureq = "3.3.0"
+serde_json = "1"
+
 [[example]]
 name = "gen-vectors"
 path = "examples/gen_vectors.rs"
+
+# Desktop-side actor for the cross-platform live sync proof (register + push).
+[[example]]
+name = "desktop-push"
+path = "examples/desktop_push.rs"

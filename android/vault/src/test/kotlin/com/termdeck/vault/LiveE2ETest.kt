@@ -30,4 +30,22 @@ class LiveE2ETest {
         assertEquals("s3cr3t-pw", b.entry("h1")!!.secret)
         assertTrue(b.isUnlocked)
     }
+
+    /**
+     * Cross-platform: a host pushed by the desktop actor (Rust `desktop-push` example) must
+     * decrypt on Android. Runs only when SYNC_EMAIL/SYNC_PW (the desktop-created account)
+     * are provided alongside the live URL.
+     */
+    @Test
+    fun desktopVaultOpensOnAndroid() {
+        val base = System.getenv("TERMDECK_LIVE_URL") ?: return
+        val email = System.getenv("SYNC_EMAIL") ?: return
+        val pw = System.getenv("SYNC_PW") ?: return
+        val vm = VaultManager(OkHttpServer(base))
+        vm.unlock(base, email, pw)
+        vm.sync()
+        val e = vm.entry("desk1")
+        assertEquals("From Desktop", e!!.host.name)
+        assertEquals("from-desktop-secret", e.secret)
+    }
 }
