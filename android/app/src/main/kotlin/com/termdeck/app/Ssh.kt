@@ -17,15 +17,26 @@ import kotlin.concurrent.thread
 /**
  * Android ships a stripped-down "BC" security provider that lacks algorithms sshj needs
  * (e.g. X25519 for curve25519-sha256 key exchange), causing "no such algorithm: X25519 for
- * provider BC". Replace it with the full bundled BouncyCastle so sshj can negotiate modern
- * ciphers. Runs once, before any connection.
+ * provider BC". Replace it with the full bundled BouncyCastle and point sshj at it. Runs
+ * once; the returned string is shown on-screen so we can confirm it worked on-device.
  */
-private fun installBouncyCastle() {
-    try { Security.removeProvider("BC") } catch (_: Exception) {}
-    Security.insertProviderAt(BouncyCastleProvider(), 1)
-    SecurityUtils.setRegisterBouncyCastle(true)
-    SecurityUtils.setSecurityProvider(null) // re-detect the now-full BC provider
+private fun installBouncyCastle(): String {
+    return try {
+        Security.removeProvider("BC")
+        val pos = Security.insertProviderAt(BouncyCastleProvider(), 1)
+        // Force sshj to use this provider ("BC") rather than re-registering the platform one.
+        SecurityUtils.setRegisterBouncyCastle(false)
+        try { SecurityUtils.setSecurityProvider("BC") } catch (_: Exception) {}
+        // Verify the algorithm sshj needs actually resolves from "BC" on this device.
+        java.security.KeyPairGenerator.getInstance("X25519", "BC")
+        "BC X25519 OK (pos=$pos)"
+    } catch (e: Exception) {
+        "BC X25519 FAIL: ${e.message}"
+    }
 }
+
+/** Runs the provider swap once; value is a human-readable status for the version bar. */
+val sshCryptoDiag: String by lazy { installBouncyCastle() }
 
 data class SftpEntry(val name: String, val path: String, val isDir: Boolean, val size: Long)
 
@@ -65,12 +76,8 @@ class SshSession(
     @Volatile var shellAlive = false
         private set
 
-    companion object {
-        private val bcReady: Boolean = run { installBouncyCastle(); true }
-    }
-
     fun connect() {
-        require(bcReady)
+        sshCryptoDiag // force the one-time BouncyCastle install before connecting
         val c = SSHClient()
         c.addHostKeyVerifier(TofuVerifier(knownHosts))
         c.connect(host.host, host.port)

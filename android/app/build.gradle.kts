@@ -12,8 +12,10 @@ android {
         applicationId = "com.termdeck.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
+        versionCode = 3
         versionName = "0.1.0"
+        // Bumped each build so the on-screen tag confirms which APK is installed.
+        buildConfigField("String", "BUILD_TAG", "\"x25519-fix-3\"")
     }
 
     // Signing keystore is committed in-repo (dev/personal use, per project decision).
@@ -35,6 +37,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

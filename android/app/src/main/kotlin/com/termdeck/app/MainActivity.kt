@@ -37,15 +37,31 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    when (vm.screen) {
-                        Screen.ACCOUNT -> AccountScreen(vm)
-                        Screen.LIST -> HostListScreen(vm)
-                        Screen.DETAIL -> HostDetailScreen(vm)
+                    Column(Modifier.fillMaxSize()) {
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            when (vm.screen) {
+                                Screen.ACCOUNT -> AccountScreen(vm)
+                                Screen.LIST -> HostListScreen(vm)
+                                Screen.DETAIL -> HostDetailScreen(vm)
+                            }
+                        }
+                        VersionBar()
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun VersionBar() {
+    Text(
+        "TermDeck v${BuildConfig.VERSION_NAME} · ${BuildConfig.BUILD_TAG} · $sshCryptoDiag",
+        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontSize = 10.sp,
+        fontFamily = FontFamily.Monospace,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
