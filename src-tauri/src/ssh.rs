@@ -37,7 +37,6 @@ pub enum PtyEvent {
     },
 }
 
-const KEYRING_SERVICE: &str = "TermDeck";
 
 /// SSH connection settings as persisted on a pane (secret NOT included).
 #[derive(Clone, Deserialize)]
@@ -129,24 +128,64 @@ impl Default for SshManager {
     }
 }
 
-// ---------- secrets (OS credential store) ----------
+// ---------- secrets (local encrypted-at-rest file, 0600) ----------
+//
+// Previously the OS Keychain (keyring). On macOS an unsigned / frequently-rebuilt binary
+// makes the Keychain re-prompt for the login password endlessly (ACL is tied to the app's
+// code signature), so secrets now live in a `secrets.json` under the app config dir with
+// owner-only permissions. For cloud-synced hosts the authoritative secret is still E2EE on
+// the server; this file is only the local source for SSH/SFTP connects.
 
-fn keyring_entry(pane_id: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYRING_SERVICE, &format!("ssh:{pane_id}")).map_err(|e| e.to_string())
+static CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Record the app config dir once at startup so the secret store can find it without
+/// threading an AppHandle through every call.
+pub fn init_config_dir(app: &AppHandle) {
+    let dir = app.path().app_config_dir().unwrap_or_else(|_| std::env::temp_dir());
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = CONFIG_DIR.set(dir);
+}
+
+fn secrets_path() -> PathBuf {
+    CONFIG_DIR
+        .get()
+        .cloned()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("secrets.json")
+}
+
+fn load_secrets() -> HashMap<String, String> {
+    std::fs::read_to_string(secrets_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_secrets(map: &HashMap<String, String>) -> Result<(), String> {
+    let path = secrets_path();
+    std::fs::write(&path, serde_json::to_string(map).unwrap_or_default()).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
 }
 
 pub fn get_secret(pane_id: &str) -> Option<String> {
-    keyring_entry(pane_id).ok()?.get_password().ok()
+    load_secrets().get(&format!("ssh:{pane_id}")).cloned()
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn secret_set(pane_id: String, value: String) -> Result<(), String> {
-    let entry = keyring_entry(&pane_id)?;
+    let mut map = load_secrets();
+    let key = format!("ssh:{pane_id}");
     if value.is_empty() {
-        let _ = entry.delete_credential();
-        return Ok(());
+        map.remove(&key);
+    } else {
+        map.insert(key, value);
     }
-    entry.set_password(&value).map_err(|e| e.to_string())
+    save_secrets(&map)
 }
 
 /// Copy a pane's saved password/passphrase to another pane, so an SFTP browser
@@ -154,17 +193,18 @@ pub fn secret_set(pane_id: String, value: String) -> Result<(), String> {
 #[tauri::command(rename_all = "camelCase")]
 pub fn secret_copy(from_pane_id: String, to_pane_id: String) -> Result<(), String> {
     if let Some(v) = get_secret(&from_pane_id) {
-        keyring_entry(&to_pane_id)?
-            .set_password(&v)
-            .map_err(|e| e.to_string())?;
+        let mut map = load_secrets();
+        map.insert(format!("ssh:{to_pane_id}"), v);
+        save_secrets(&map)?;
     }
     Ok(())
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn secret_delete(pane_id: String) -> Result<(), String> {
-    if let Ok(entry) = keyring_entry(&pane_id) {
-        let _ = entry.delete_credential();
+    let mut map = load_secrets();
+    if map.remove(&format!("ssh:{pane_id}")).is_some() {
+        save_secrets(&map)?;
     }
     Ok(())
 }

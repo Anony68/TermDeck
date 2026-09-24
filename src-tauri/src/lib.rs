@@ -43,7 +43,8 @@ pub fn run() {
         .manage(SshManager::new())
         .manage(SyncState::new())
         .manage(edit::EditManager::new())
-        .setup(|_app| {
+        .setup(|app| {
+            ssh::init_config_dir(app.handle());
             edit::sweep_stale();
             Ok(())
         })

@@ -8,9 +8,24 @@ import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.sftp.SFTPClient
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.userauth.password.PasswordUtils
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.File
 import java.security.PublicKey
+import java.security.Security
 import kotlin.concurrent.thread
+
+/**
+ * Android ships a stripped-down "BC" security provider that lacks algorithms sshj needs
+ * (e.g. X25519 for curve25519-sha256 key exchange), causing "no such algorithm: X25519 for
+ * provider BC". Replace it with the full bundled BouncyCastle so sshj can negotiate modern
+ * ciphers. Runs once, before any connection.
+ */
+private fun installBouncyCastle() {
+    try { Security.removeProvider("BC") } catch (_: Exception) {}
+    Security.insertProviderAt(BouncyCastleProvider(), 1)
+    SecurityUtils.setRegisterBouncyCastle(true)
+    SecurityUtils.setSecurityProvider(null) // re-detect the now-full BC provider
+}
 
 data class SftpEntry(val name: String, val path: String, val isDir: Boolean, val size: Long)
 
@@ -50,7 +65,12 @@ class SshSession(
     @Volatile var shellAlive = false
         private set
 
+    companion object {
+        private val bcReady: Boolean = run { installBouncyCastle(); true }
+    }
+
     fun connect() {
+        require(bcReady)
         val c = SSHClient()
         c.addHostKeyVerifier(TofuVerifier(knownHosts))
         c.connect(host.host, host.port)

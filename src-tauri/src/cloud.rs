@@ -83,7 +83,10 @@ fn post(base_url: &str, path: &str, token: Option<&str>, body: &Value) -> R<Valu
     if let Some(t) = token {
         req = req.header("authorization", &format!("Bearer {t}"));
     }
-    let resp = req.send(body.to_string()).map_err(|e| e.to_string())?;
+    let resp = req.send(body.to_string()).map_err(|e| {
+        eprintln!("[cloud] POST {path} error: {e}");
+        e.to_string()
+    })?;
     let mut s = String::new();
     resp.into_body().into_reader().read_to_string(&mut s).map_err(|e| e.to_string())?;
     if s.is_empty() {
@@ -290,22 +293,12 @@ pub fn cloud_status(state: State<SyncState>) -> CloudStatus {
 // the OS keyring and a managed key-file dir here in Rust, so plaintext secrets never enter
 // the webview.
 
-const KEYRING_SERVICE: &str = "TermDeck";
-
-fn keyring_entry(id: &str) -> R<keyring::Entry> {
-    keyring::Entry::new(KEYRING_SERVICE, &format!("ssh:{id}")).map_err(|e| e.to_string())
-}
+// Secrets share the SSH module's local file store (no OS keychain — avoids macOS prompts).
 fn secret_get(id: &str) -> String {
-    keyring_entry(id).ok().and_then(|e| e.get_password().ok()).unwrap_or_default()
+    crate::ssh::get_secret(id).unwrap_or_default()
 }
 fn secret_put(id: &str, value: &str) -> R<()> {
-    let e = keyring_entry(id)?;
-    if value.is_empty() {
-        let _ = e.delete_credential();
-        Ok(())
-    } else {
-        e.set_password(value).map_err(|e| e.to_string())
-    }
+    crate::ssh::secret_set(id.to_string(), value.to_string())
 }
 
 /// Assemble the encrypted-record plaintext from its parts (pure; unit-tested).

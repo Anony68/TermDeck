@@ -28,3 +28,8 @@ path = "examples/gen_vectors.rs"
 [[example]]
 name = "desktop-push"
 path = "examples/desktop_push.rs"
+
+# Local diagnostic: unlock → login → pull with the real cached account.
+[[example]]
+name = "account-diag"
+path = "examples/account_diag.rs"
